@@ -1,6 +1,7 @@
 package com.gerald.latentchemlib.sim;
 
 import com.gerald.latentchemlib.data.ChemicalTraits;
+import com.gerald.latentchemlib.data.MachineProfile;
 import net.minecraft.core.Direction;
 
 public final class EmergentMath {
@@ -72,8 +73,15 @@ public final class EmergentMath {
         return instability * instability / damping;
     }
 
-    public static ChemicalState chamberAgitation(ChemicalState state) {
+    public static ChemicalState chamberAgitation(ChemicalState state, MachineProfile profile) {
         if (state.mass() <= 0.0) return state;
-        return new ChemicalState(state.chemicalId(), state.mass(), state.density(), state.temperature() + 35.0, Math.min(4.0, state.charge() + 0.025), state.energy() + 80.0);
+        return new ChemicalState(
+            state.chemicalId(),
+            state.mass(),
+            state.density(),
+            state.temperature() + profile.chamberTemperaturePerSecond(),
+            Math.min(profile.reactionChamberMaxCharge(), state.charge() + profile.chamberChargePerSecond()),
+            state.energy() + profile.chamberEnergyPerSecond()
+        );
     }
 }

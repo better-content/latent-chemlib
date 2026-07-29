@@ -2,11 +2,14 @@ package com.gerald.latentchemlib.blockentity;
 
 import com.gerald.latentchemlib.LatentChemlibMod;
 import com.gerald.latentchemlib.data.LatentDataManager;
+import com.gerald.latentchemlib.data.MachineProfile;
 import com.gerald.latentchemlib.data.ReactionRule;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.EmergentMath;
+import com.gerald.latentchemlib.sim.MachineTransfer;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
+import com.gerald.latentchemlib.sim.ReactionRuleSelector;
 import com.gerald.latentchemlib.sim.SimulationBudget;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
 import com.gerald.heatsync.api.HeatBlockEntity;
@@ -31,7 +34,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEntity {
-    private static final float MAX_HEAT = 4_000.0f;
     private ChemicalState stored = ChemicalState.empty();
     private float heat;
     private LazyOptional<IHeatStorage> heatCapability = LazyOptional.of(() -> this);
@@ -53,7 +55,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     public void load(CompoundTag tag) {
         super.load(tag);
         stored = ChemicalState.load(tag.getCompound("stored"));
-        heat = tag.getFloat("heat");
+        heat = Math.min(configuredMaxHeat(), Math.max(0.0f, tag.getFloat("heat")));
     }
 
     @Override
@@ -106,7 +108,8 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         } else if (block == LatentChemlibMod.GAS_RELEASE.get()) {
             entity.release(serverLevel);
         } else if (block == LatentChemlibMod.GAS_REACTION_CHAMBER.get()) {
-            entity.stored = EmergentMath.chamberAgitation(entity.stored);
+            entity.heat = Math.min(entity.heat, entity.configuredMaxHeat());
+            entity.stored = EmergentMath.chamberAgitation(entity.stored, LatentDataManager.INSTANCE.machineProfile());
             entity.applyReactionRule(serverLevel);
         }
         entity.setChanged();
@@ -120,7 +123,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         ChemicalState cellState = ChemicalCellItem.state(stack);
         if (cellState.mass() <= 0.0) {
             if (stored.mass() <= 0.0) return InteractionResult.PASS;
-            ChemicalState moved = stored.withMass(Math.min(250.0, stored.mass()));
+            ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
             stored = stored.withMass(stored.mass() - moved.mass());
             player.setItemInHand(hand, ChemicalCellItem.withState(stack, moved));
             setChanged();
@@ -128,7 +131,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         }
 
         if (stored.mass() > 0.0 && !stored.chemicalId().equals(cellState.chemicalId())) return InteractionResult.PASS;
-        if (stored.mass() + cellState.mass() > 16_000.0) return InteractionResult.PASS;
+        if (stored.mass() + cellState.mass() > machineProfile().machineMassCapacity()) return InteractionResult.PASS;
         stored = stored.merge(cellState);
         player.setItemInHand(hand, new ItemStack(LatentChemlibMod.SEALED_CHEMICAL_CELL.get()));
         setChanged();
@@ -136,13 +139,13 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     }
 
     private void capture(ServerLevel level) {
-        if (stored.mass() > 16_000.0) return;
         for (Direction direction : Direction.values()) {
             BlockEntity neighbor = level.getBlockEntity(worldPosition.relative(direction));
             if (!(neighbor instanceof ChemicalCloudBlockEntity cloud)) continue;
             ChemicalState cloudState = cloud.chemicalState();
             if (stored.mass() > 0.0 && !stored.chemicalId().equals(cloudState.chemicalId())) continue;
-            double amount = Math.min(250.0, Math.max(0.0, cloudState.mass() * 0.25));
+            double amount = MachineTransfer.captureAmount(stored.mass(), cloudState.mass(), machineProfile().machineMassCapacity());
+            if (amount <= 0.0) return;
             ChemicalState moved = cloud.extractMass(amount);
             stored = stored.merge(moved);
             return;
@@ -157,7 +160,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
             level.setBlock(target, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3);
         }
         if (level.getBlockEntity(target) instanceof ChemicalCloudBlockEntity cloud) {
-            ChemicalState moved = stored.withMass(Math.min(250.0, stored.mass()));
+            ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
             cloud.seed(moved);
             stored = stored.withMass(stored.mass() - moved.mass());
         }
@@ -165,17 +168,16 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
 
     private void applyReactionRule(ServerLevel level) {
         if (stored.mass() <= 0.0) return;
-        for (ReactionRule rule : LatentDataManager.INSTANCE.reactionRules()) {
-            if (rule.id().contains(":decay/")) continue;
-            if (!rule.matches(stored, heat)) continue;
-            heat = Math.max(0.0f, heat - rule.heatCost() + rule.heatEmission());
+        var selected = ReactionRuleSelector.firstMatch(LatentDataManager.INSTANCE.reactionRules(), stored, heat);
+        if (selected.isPresent()) {
+            ReactionRule rule = selected.get();
+            heat = Math.min(configuredMaxHeat(), Math.max(0.0f, heat - rule.heatCost() + rule.heatEmission()));
             stored = rule.apply(stored);
             var item = rule.outputItemValue();
             if (item != null) {
                 BlockPos target = worldPosition.above();
                 Containers.dropItemStack(level, target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5, new ItemStack(item));
             }
-            return;
         }
     }
 
@@ -186,12 +188,12 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
 
     @Override
     public float getMaxHeat() {
-        return MAX_HEAT;
+        return configuredMaxHeat();
     }
 
     @Override
     public float getThermalCapacity() {
-        return MAX_HEAT;
+        return configuredMaxHeat();
     }
 
     @Override
@@ -217,7 +219,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     @Override
     public float addHeat(float amount, boolean simulate) {
         if (amount <= 0.0f) return 0.0f;
-        float accepted = Math.min(amount, Math.max(0.0f, MAX_HEAT - heat));
+        float accepted = Math.min(amount, Math.max(0.0f, configuredMaxHeat() - heat));
         if (!simulate && accepted > 0.0f) addHeat(accepted);
         return accepted;
     }
@@ -232,16 +234,27 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
 
     @Override
     public void addHeat(float heat) {
-        this.heat = Math.min(MAX_HEAT, Math.max(0.0f, this.heat + heat));
+        this.heat = Math.min(configuredMaxHeat(), Math.max(0.0f, this.heat + heat));
     }
 
     @Override
     public void setHeat(float heat) {
-        this.heat = Math.min(MAX_HEAT, Math.max(0.0f, heat));
+        this.heat = Math.min(configuredMaxHeat(), Math.max(0.0f, heat));
     }
 
     @Override
     public float maxHeat() {
-        return MAX_HEAT;
+        return configuredMaxHeat();
+    }
+
+    private MachineProfile machineProfile() {
+        return LatentDataManager.INSTANCE.machineProfile();
+    }
+
+    private float configuredMaxHeat() {
+        MachineProfile profile = machineProfile();
+        return getBlockState().getBlock() == LatentChemlibMod.GAS_REACTION_CHAMBER.get()
+            ? profile.reactionChamberMaxHeat()
+            : profile.defaultMaxHeat();
     }
 }

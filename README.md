@@ -64,6 +64,7 @@ Pack-side datapack examples are expected under:
 
 ```text
 data/latent_chemlib/chemical_traits/
+data/latent_chemlib/machine_profiles/
 data/latent_chemlib/scheduler_profiles/
 ```
 
@@ -71,7 +72,11 @@ Traits expose numeric levers such as atomic number, atomic mass, base state,
 phase energy, volatility, thermal conductivity, heat capacity, instability,
 absorption, neutron yield, and curve definitions. Scheduler profiles cap per
 dimension and per second simulation work so large packs can tune the system
-without recompiling the mod.
+without recompiling the mod. Machine profiles separately own gameplay
+capabilities and pacing: default and reaction-chamber heat capacity, chamber
+charge capacity, contained mass capacity, and per-second chamber temperature,
+charge, and energy conditioning rates. Machine profiles use the explicit
+`bc.latent_chemlib.machine_profile.v1` schema.
 
 ## Notes
 

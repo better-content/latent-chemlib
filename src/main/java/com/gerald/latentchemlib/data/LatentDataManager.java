@@ -26,6 +26,7 @@ public class LatentDataManager implements PreparableReloadListener {
 
     private volatile Map<String, ChemicalTraits> traits = Map.of();
     private volatile SchedulerProfile schedulerProfile = SchedulerProfile.defaults();
+    private volatile MachineProfile machineProfile = MachineProfile.defaults();
     private volatile List<ReactionRule> reactionRules = List.of();
     private volatile List<NuclearDecayRule> nuclearDecayRules = List.of();
 
@@ -36,6 +37,10 @@ public class LatentDataManager implements PreparableReloadListener {
 
     public SchedulerProfile schedulerProfile() {
         return schedulerProfile;
+    }
+
+    public MachineProfile machineProfile() {
+        return machineProfile;
     }
 
     public List<ReactionRule> reactionRules() {
@@ -53,6 +58,7 @@ public class LatentDataManager implements PreparableReloadListener {
             .thenAcceptAsync(snapshot -> {
                 traits = snapshot.traits();
                 schedulerProfile = snapshot.schedulerProfile();
+                machineProfile = snapshot.machineProfile();
                 reactionRules = snapshot.reactionRules();
                 nuclearDecayRules = snapshot.nuclearDecayRules();
                 LatentChemlibMod.LOGGER.info(
@@ -97,6 +103,19 @@ public class LatentDataManager implements PreparableReloadListener {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent scheduler profile {}", entry.getKey(), ex);
             }
         }
+        MachineProfile loadedMachineProfile = MachineProfile.defaults();
+        for (var entry : resourceManager.listResources("machine_profiles", id -> id.getPath().endsWith("default.json")).entrySet()) {
+            try (var reader = entry.getValue().openAsReader()) {
+                JsonObject json = GSON.fromJson(reader, JsonObject.class);
+                if (MachineProfile.hasSupportedSchema(json)) {
+                    loadedMachineProfile = MachineProfile.fromJson(json);
+                } else {
+                    LatentChemlibMod.LOGGER.warn("Ignoring latent machine profile with unsupported or missing schema {}", entry.getKey());
+                }
+            } catch (Exception ex) {
+                LatentChemlibMod.LOGGER.warn("Ignoring invalid latent machine profile {}", entry.getKey(), ex);
+            }
+        }
         resourceManager.listResources("reaction_rules", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
             try (var reader = resource.openAsReader()) {
                 JsonElement root = GSON.fromJson(reader, JsonElement.class);
@@ -121,7 +140,7 @@ public class LatentDataManager implements PreparableReloadListener {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent nuclear decay file {}", id, ex);
             }
         });
-        return new Snapshot(Map.copyOf(loadedTraits), profile, List.copyOf(loadedRules), List.copyOf(loadedDecayRules));
+        return new Snapshot(Map.copyOf(loadedTraits), profile, loadedMachineProfile, List.copyOf(loadedRules), List.copyOf(loadedDecayRules));
     }
 
     private ChemicalTraits traitsFromJson(JsonObject json, ChemicalTraits fallback) {
@@ -229,6 +248,7 @@ public class LatentDataManager implements PreparableReloadListener {
     private record Snapshot(
         Map<String, ChemicalTraits> traits,
         SchedulerProfile schedulerProfile,
+        MachineProfile machineProfile,
         List<ReactionRule> reactionRules,
         List<NuclearDecayRule> nuclearDecayRules
     ) {}

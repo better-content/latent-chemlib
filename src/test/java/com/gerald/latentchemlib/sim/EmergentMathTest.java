@@ -1,6 +1,7 @@
 package com.gerald.latentchemlib.sim;
 
 import com.gerald.latentchemlib.data.ChemicalTraits;
+import com.gerald.latentchemlib.data.MachineProfile;
 import com.gerald.latentchemlib.data.NumericCurve;
 import com.gerald.latentchemlib.data.PresetCurve;
 import net.minecraft.core.Direction;
@@ -112,12 +113,16 @@ class EmergentMathTest {
 
     @Test
     void chamberAgitationAddsHeatChargeAndEnergyOnlyWhenMatterExists() {
+        MachineProfile profile = MachineProfile.defaults();
         ChemicalState empty = ChemicalState.empty();
-        assertSame(empty, EmergentMath.chamberAgitation(empty));
+        assertSame(empty, EmergentMath.chamberAgitation(empty, profile));
 
-        ChemicalState charged = EmergentMath.chamberAgitation(new ChemicalState("chemlib:hydrogen", 100.0, 1.0, 300.0, 3.99, 10.0));
-        assertEquals(335.0, charged.temperature());
-        assertEquals(4.0, charged.charge());
-        assertEquals(90.0, charged.energy());
+        ChemicalState charged = EmergentMath.chamberAgitation(
+            new ChemicalState("chemlib:hydrogen", 100.0, 1.0, 300.0, 19.99, 10.0),
+            profile
+        );
+        assertEquals(2_800.0, charged.temperature());
+        assertEquals(20.0, charged.charge());
+        assertEquals(30_010.0, charged.energy());
     }
 }

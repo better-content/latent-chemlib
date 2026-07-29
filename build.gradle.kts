@@ -215,11 +215,15 @@ tasks.jacocoTestReport {
         files(
             sourceSets.main.get().output.asFileTree.matching {
                 include("com/gerald/latentchemlib/data/ChemicalTraits.class")
+                include("com/gerald/latentchemlib/data/MachineProfile.class")
                 include("com/gerald/latentchemlib/data/NuclearDecayRule.class")
                 include("com/gerald/latentchemlib/data/NumericCurve.class")
                 include("com/gerald/latentchemlib/data/PresetCurve.class")
                 include("com/gerald/latentchemlib/data/SchedulerProfile.class")
                 include("com/gerald/latentchemlib/sim/ChemicalState.class")
+                include("com/gerald/latentchemlib/sim/ChamberPacingSimulator.class")
+                include("com/gerald/latentchemlib/sim/MachineTransfer.class")
+                include("com/gerald/latentchemlib/sim/ReactionRuleSelector.class")
                 include("com/gerald/latentchemlib/sim/EmergentMath.class")
                 include("com/gerald/latentchemlib/sim/SimulationBudget.class")
                 include("com/gerald/latentchemlib/sim/SimulationBudgetLedger.class")
