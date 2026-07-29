@@ -5,15 +5,23 @@ import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.sim.ChemicalState;
+import com.gerald.latentchemlib.sim.GasFluidCodec;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import net.minecraftforge.registries.ForgeRegistries;
 
 @GameTestHolder(LatentChemlibMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -182,6 +190,75 @@ public final class LatentChemlibGameTests {
         helper.succeed();
     }
 
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void sealedChemicalCellFluidCapabilityUsesFixedCapacityAndPreservesState(GameTestHelper helper) {
+        ItemStack cell = new ItemStack(LatentChemlibMod.SEALED_CHEMICAL_CELL.get());
+        IFluidHandler handler = cell.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).orElseThrow(AssertionError::new);
+        FluidStack hydrogen = new FluidStack(GasFluidCodec.sourceFluid("chemlib:hydrogen").orElseThrow(), 4_500);
+
+        helper.assertTrue(handler.fill(hydrogen, IFluidHandler.FluidAction.EXECUTE) == 4_000, "Cell should cap gas fill at 4,000 mB");
+        helper.assertTrue(ChemicalCellItem.state(cell).mass() == 256.0, "Full cell should store exactly 256 mass");
+        FluidStack drained = handler.drain(250, IFluidHandler.FluidAction.EXECUTE);
+        helper.assertTrue(drained.getAmount() == 250, "Cell should drain a requested formula unit");
+        helper.assertTrue(ChemicalCellItem.state(cell).mass() == 240.0, "Draining 250 mB should remove exactly 16 mass");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void machineFluidCapabilitiesEnforceContainmentRoles(GameTestHelper helper) {
+        FluidStack hydrogen = new FluidStack(GasFluidCodec.sourceFluid("chemlib:hydrogen").orElseThrow(), 250);
+        LatentMachineBlockEntity capture = placeMachine(helper, new BlockPos(1, 1, 1), LatentChemlibMod.GAS_CAPTURE.get());
+        LatentMachineBlockEntity tank = placeMachine(helper, new BlockPos(2, 1, 1), LatentChemlibMod.GAS_TANK.get());
+        LatentMachineBlockEntity chamber = placeMachine(helper, new BlockPos(3, 1, 1), LatentChemlibMod.GAS_REACTION_CHAMBER.get());
+        LatentMachineBlockEntity release = placeMachine(helper, new BlockPos(4, 1, 1), LatentChemlibMod.GAS_RELEASE.get());
+        IFluidHandler captureFluid = fluidHandler(capture);
+        IFluidHandler tankFluid = fluidHandler(tank);
+        IFluidHandler chamberFluid = fluidHandler(chamber);
+        IFluidHandler releaseFluid = fluidHandler(release);
+
+        helper.assertTrue(captureFluid.fill(hydrogen, IFluidHandler.FluidAction.EXECUTE) == 0, "Capture must reject external gas fill");
+        capture.setStoredState(new ChemicalState("chemlib:hydrogen", 16.0, 1.0, 293.0, 0.0, 0.0));
+        helper.assertTrue(captureFluid.drain(250, IFluidHandler.FluidAction.SIMULATE).getAmount() == 250, "Capture must expose collected gas for drain");
+        helper.assertTrue(tankFluid.fill(hydrogen, IFluidHandler.FluidAction.EXECUTE) == 250, "Tank must accept gas");
+        helper.assertTrue(tankFluid.drain(250, IFluidHandler.FluidAction.SIMULATE).getAmount() == 250, "Tank must expose gas");
+        helper.assertTrue(chamberFluid.fill(hydrogen, IFluidHandler.FluidAction.EXECUTE) == 250, "Reaction chamber must accept gas");
+        helper.assertTrue(chamberFluid.drain(250, IFluidHandler.FluidAction.SIMULATE).getAmount() == 250, "Reaction chamber must expose gas");
+        helper.assertTrue(releaseFluid.fill(hydrogen, IFluidHandler.FluidAction.EXECUTE) == 250, "Release must accept gas");
+        helper.assertTrue(releaseFluid.drain(250, IFluidHandler.FluidAction.SIMULATE).isEmpty(), "Release must not expose gas for drain");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void placedGasFluidImmediatelyBecomesChemicalCloud(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        var hydrogen = GasFluidCodec.sourceFluid("chemlib:hydrogen").orElseThrow();
+        helper.assertTrue(
+            GasFluidCodec.chemicalId(((FlowingFluid) hydrogen).getFlowing()).orElseThrow().equals("chemlib:hydrogen"),
+            "Flowing and source gas fluid IDs must resolve to the same chemical"
+        );
+        helper.setBlock(pos, hydrogen.defaultFluidState().createLegacyBlock());
+        helper.assertTrue(helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity, "Placed gas fluid must immediately gasify");
+        helper.assertTrue(!GasFluidCodec.isGasFluid(helper.getLevel().getFluidState(helper.absolutePos(pos)).getType()), "No gas fluid block may remain after conversion");
+        ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) helper.getBlockEntity(pos);
+        helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:hydrogen"), "Gasified fluid must preserve chemical identity");
+        helper.assertTrue(cloud.chemicalState().mass() == 64.0, "One placed bucket must become exactly 64 mass");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 60)
+    public static void blockInventoryGasEscapesWithinTwentyTicks(GameTestHelper helper) {
+        BlockPos chestPos = new BlockPos(1, 1, 1);
+        helper.setBlock(chestPos, Blocks.CHEST);
+        ChestBlockEntity chest = (ChestBlockEntity) helper.getBlockEntity(chestPos);
+        chest.setItem(0, new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("chemlib", "hydrogen"))));
+
+        helper.runAfterDelay(21, () -> {
+            helper.assertTrue(chest.getItem(0).isEmpty(), "Loose gas must leave block inventories within 20 ticks");
+            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0.0, "Escaped inventory gas must become a cloud");
+            helper.succeed();
+        });
+    }
+
     private static void assertMachineEntity(GameTestHelper helper, BlockPos pos, Block block) {
         helper.setBlock(pos, block);
         helper.assertTrue(helper.getBlockEntity(pos) instanceof LatentMachineBlockEntity, block.getDescriptionId() + " should create a latent machine entity");
@@ -203,6 +280,10 @@ public final class LatentChemlibGameTests {
         BlockEntity blockEntity = helper.getBlockEntity(pos);
         if (blockEntity instanceof LatentMachineBlockEntity machine) return machine;
         throw new IllegalStateException("Expected latent machine at " + pos);
+    }
+
+    private static IFluidHandler fluidHandler(LatentMachineBlockEntity machine) {
+        return machine.getCapability(ForgeCapabilities.FLUID_HANDLER).orElseThrow(AssertionError::new);
     }
 
     private static double totalCloudMass(GameTestHelper helper, BlockPos from, BlockPos to) {

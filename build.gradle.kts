@@ -7,6 +7,7 @@ plugins {
     jacoco
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("net.minecraftforge.gradle") version "[6.0,6.2)"
+    id("org.spongepowered.mixin") version "0.7.+"
 }
 
 val minecraftVersion = property("minecraft_version") as String
@@ -96,6 +97,7 @@ sourceSets.main {
 repositories {
     mavenCentral()
     maven("https://maven.minecraftforge.net")
+    maven("https://repo.spongepowered.org/repository/maven-public/")
     maven("https://thedarkcolour.github.io/KotlinForForge/")
     maven("https://maven.createmod.net")
     maven("https://maven.ithundxr.dev/mirror")
@@ -118,6 +120,7 @@ dependencies {
     implementation(deobf("com.simibubi.create:create-$minecraftVersion:$createMavenVersion:slim"))
     implementation(deobf("net.createmod.ponder:Ponder-Forge-$minecraftVersion:$ponderVersion"))
     implementation(deobf("io.github.llamalad7:mixinextras-forge:0.3.6"))
+    annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
     compileOnly(deobf("dev.engine-room.flywheel:flywheel-forge-api-$minecraftVersion:$flywheelVersion"))
     runtimeOnly(deobf("dev.engine-room.flywheel:flywheel-forge-$minecraftVersion:$flywheelVersion"))
     implementation(deobf("com.tterrag.registrate:Registrate:$registrateVersion"))
@@ -158,6 +161,11 @@ tasks.processResources {
     filesMatching(listOf("META-INF/mods.toml", "pack.mcmeta")) {
         expand(props)
     }
+}
+
+mixin {
+    add(sourceSets.main.get(), "latent_chemlib.refmap.json")
+    config("latent_chemlib.mixins.json")
 }
 
 val syncGameTestStructures by tasks.registering(Copy::class) {

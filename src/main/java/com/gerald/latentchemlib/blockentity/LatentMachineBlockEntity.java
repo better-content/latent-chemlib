@@ -4,9 +4,10 @@ import com.gerald.latentchemlib.LatentChemlibMod;
 import com.gerald.latentchemlib.data.LatentDataManager;
 import com.gerald.latentchemlib.data.MachineProfile;
 import com.gerald.latentchemlib.data.ReactionRule;
-import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.EmergentMath;
+import com.gerald.latentchemlib.sim.GasFluidCodec;
+import com.gerald.latentchemlib.sim.GasFluidStorage;
 import com.gerald.latentchemlib.sim.MachineTransfer;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
 import com.gerald.latentchemlib.sim.ReactionRuleSelector;
@@ -29,7 +30,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
+import net.minecraftforge.fluids.FluidUtil;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,6 +41,14 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     private ChemicalState stored = ChemicalState.empty();
     private float heat;
     private LazyOptional<IHeatStorage> heatCapability = LazyOptional.of(() -> this);
+    private final IFluidHandler fluidHandler = new GasFluidStorage(
+        () -> stored,
+        this::setStoredState,
+        () -> GasFluidCodec.millibucketsForMass(machineProfile().machineMassCapacity()),
+        this::canFillGas,
+        this::canDrainGas
+    );
+    private LazyOptional<IFluidHandler> fluidCapability = LazyOptional.of(() -> fluidHandler);
 
     public LatentMachineBlockEntity(BlockPos pos, BlockState blockState) {
         super(LatentChemlibMod.MACHINE_ENTITY.get(), pos, blockState);
@@ -70,6 +82,9 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         if (!remove && cap == HeatCapabilities.INSTANCE.getHEAT()) {
             return heatCapability.cast();
         }
+        if (!remove && cap == ForgeCapabilities.FLUID_HANDLER) {
+            return fluidCapability.cast();
+        }
         return super.getCapability(cap, side);
     }
 
@@ -77,12 +92,14 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     public void invalidateCaps() {
         super.invalidateCaps();
         heatCapability.invalidate();
+        fluidCapability.invalidate();
     }
 
     @Override
     public void reviveCaps() {
         super.reviveCaps();
         heatCapability = LazyOptional.of(() -> this);
+        fluidCapability = LazyOptional.of(() -> fluidHandler);
     }
 
     public static void tick(Level level, BlockPos pos, BlockState blockState, LatentMachineBlockEntity entity) {
@@ -119,23 +136,9 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         ItemStack stack = player.getItemInHand(hand);
         if (!stack.is(LatentChemlibMod.SEALED_CHEMICAL_CELL.get())) return InteractionResult.PASS;
         if (!(level instanceof ServerLevel)) return InteractionResult.SUCCESS;
-
-        ChemicalState cellState = ChemicalCellItem.state(stack);
-        if (cellState.mass() <= 0.0) {
-            if (stored.mass() <= 0.0) return InteractionResult.PASS;
-            ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
-            stored = stored.withMass(stored.mass() - moved.mass());
-            player.setItemInHand(hand, ChemicalCellItem.withState(stack, moved));
-            setChanged();
-            return InteractionResult.CONSUME;
-        }
-
-        if (stored.mass() > 0.0 && !stored.chemicalId().equals(cellState.chemicalId())) return InteractionResult.PASS;
-        if (stored.mass() + cellState.mass() > machineProfile().machineMassCapacity()) return InteractionResult.PASS;
-        stored = stored.merge(cellState);
-        player.setItemInHand(hand, new ItemStack(LatentChemlibMod.SEALED_CHEMICAL_CELL.get()));
-        setChanged();
-        return InteractionResult.CONSUME;
+        return FluidUtil.interactWithFluidHandler(player, hand, fluidHandler)
+            ? InteractionResult.CONSUME
+            : InteractionResult.PASS;
     }
 
     private void capture(ServerLevel level) {
@@ -256,5 +259,19 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         return getBlockState().getBlock() == LatentChemlibMod.GAS_REACTION_CHAMBER.get()
             ? profile.reactionChamberMaxHeat()
             : profile.defaultMaxHeat();
+    }
+
+    private boolean canFillGas() {
+        Block block = getBlockState().getBlock();
+        return block == LatentChemlibMod.GAS_TANK.get()
+            || block == LatentChemlibMod.GAS_REACTION_CHAMBER.get()
+            || block == LatentChemlibMod.GAS_RELEASE.get();
+    }
+
+    private boolean canDrainGas() {
+        Block block = getBlockState().getBlock();
+        return block == LatentChemlibMod.GAS_CAPTURE.get()
+            || block == LatentChemlibMod.GAS_TANK.get()
+            || block == LatentChemlibMod.GAS_REACTION_CHAMBER.get();
     }
 }

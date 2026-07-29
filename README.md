@@ -31,7 +31,7 @@ ChemLib registry data.
 ## Tech Stack
 
 - Minecraft `1.20.1`
-- Forge `47.4.10`
+- Forge `47.4.13`
 - Java `17`
 - Kotlin for Forge `4.11.0`
 - Create `6.0.8`
