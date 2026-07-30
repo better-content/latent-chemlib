@@ -9,6 +9,9 @@ import com.gerald.latentchemlib.sim.EmergentMath;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
 import com.gerald.latentchemlib.sim.SimulationBudget;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
+import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
+import com.gerald.latentchemlib.integration.adpother.LatentGasHazardService;
+import com.endertech.minecraft.forge.world.BiomeId;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -89,6 +92,20 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
             entity.syncVisualState();
             entity.setChanged();
             return;
+        }
+
+        if (LatentGasHazardService.INSTANCE.tryIgnite(serverLevel, pos)) return;
+        if (serverLevel.getRandom().nextInt(20) == 0
+            && SimulationScheduler.INSTANCE.trySpend(serverLevel, SimulationBudget.NEIGHBOR_OPS, 1)) {
+            AdpotherCloudView.INSTANCE.gasSelectorAt(serverLevel, pos).ifPresent(selector ->
+                selector.tryAffectBlocksBelow(
+                    selector.defaultBlockState(),
+                    serverLevel,
+                    pos,
+                    BiomeId.from(serverLevel, pos)
+                )
+            );
+            if (!(serverLevel.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity)) return;
         }
 
         ChemicalTraits traits = LatentDataManager.INSTANCE.traits(entity.state.chemicalId());

@@ -6,6 +6,8 @@ import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
+import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
+import com.gerald.latentchemlib.integration.adpother.LatentGasHazardService;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.GasFluidCodec;
 import net.minecraft.core.BlockPos;
@@ -65,6 +67,84 @@ public final class LatentChemlibGameTests {
         helper.assertTrue(
             !helper.getBlockState(pos).is(carbon),
             "The integration must not place an AdPother gas block"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void adpotherExposureReadsOnlyWholeUnitsInTheSampledCloudCell(GameTestHelper helper) {
+        BlockPos cloudPos = new BlockPos(1, 1, 1);
+        ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
+        cloud.seed(new ChemicalState("chemlib:carbon_dioxide", 32.0, 1.0, 293.0, 0.0, 0.0));
+        BlockPos absoluteCloudPos = helper.absolutePos(cloudPos);
+
+        var contact = AdpotherCloudView.INSTANCE.contactAt(
+            helper.getLevel(),
+            absoluteCloudPos,
+            net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos)
+        ).orElseThrow();
+        helper.assertTrue(contact.units() == 2, "Cloud contact should expose two whole AdPother units");
+        helper.assertTrue(
+            AdpotherCloudView.INSTANCE.contactAt(
+                helper.getLevel(),
+                absoluteCloudPos.east(),
+                net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos.east())
+            ).isEmpty(),
+            "An adjacent cell must not inherit cloud exposure"
+        );
+
+        cloud.extractMass(17.0);
+        helper.assertTrue(
+            AdpotherCloudView.INSTANCE.contactAt(
+                helper.getLevel(),
+                absoluteCloudPos,
+                net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos)
+            ).isEmpty(),
+            "A sub-unit cloud wisp must not apply AdPother exposure"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void mixedFlammableCloudsShareOneExplosionThreshold(GameTestHelper helper) {
+        BlockPos firstPos = new BlockPos(1, 1, 1);
+        BlockPos secondPos = firstPos.east();
+        placeCloud(helper, firstPos).seed(
+            new ChemicalState("chemlib:carbon_dioxide", 8.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
+        );
+        placeCloud(helper, secondPos).seed(
+            new ChemicalState("latent_chemlib:dust", 10.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
+        );
+
+        var detection = LatentGasHazardService.INSTANCE.detectAround(
+            helper.getLevel(),
+            helper.absolutePos(firstPos),
+            4
+        );
+        helper.assertTrue(
+            detection.explosionRisk(),
+            "Half of carbon's LEL plus half of dust's LEL should be an explosion risk"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void ignitionConsumesThresholdQualifiedLatentCloud(GameTestHelper helper) {
+        BlockPos cloudPos = new BlockPos(2, 2, 2);
+        placeCloud(helper, cloudPos).seed(
+            new ChemicalState("latent_chemlib:dust", 20.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
+        );
+        helper.setBlock(cloudPos.east(), Blocks.TORCH);
+
+        boolean ignited = LatentGasHazardService.INSTANCE.tryIgnite(
+            helper.getLevel(),
+            helper.absolutePos(cloudPos)
+        );
+
+        helper.assertTrue(ignited, "A threshold dust cloud beside a torch should ignite");
+        helper.assertTrue(
+            !(helper.getBlockEntity(cloudPos) instanceof ChemicalCloudBlockEntity),
+            "Ignition must consume the assessed cloud before creating the explosion"
         );
         helper.succeed();
     }

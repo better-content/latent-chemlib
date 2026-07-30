@@ -7,6 +7,7 @@ import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
@@ -29,13 +30,31 @@ public abstract class VacuumBlockSuckInMixin {
         if (!(level instanceof ServerLevel serverLevel)) return;
         AdpotherCloudView.INSTANCE.gasSelectorAt(serverLevel, pos).ifPresent(selector -> {
             boolean capturedAsWaste = false;
+            boolean hasBag = false;
             for (ItemStack equipment : ForgeEntity.getEquipmentOn(player)) {
-                if (equipment.getItem() instanceof VacuumBag bag && bag.fill(equipment, selector, 1) > 0) {
+                if (!(equipment.getItem() instanceof VacuumBag bag)) continue;
+                hasBag = true;
+                if (bag.fill(equipment, selector, 1) > 0) {
                     capturedAsWaste = true;
                     break;
                 }
             }
-            if (capturedAsWaste) selector.spend(serverLevel, pos);
+            if (capturedAsWaste) {
+                selector.spend(serverLevel, pos);
+                player.displayClientMessage(
+                    Component.translatable("message.latent_chemlib.vacuum.captured"),
+                    true
+                );
+            } else {
+                player.displayClientMessage(
+                    Component.translatable(
+                        hasBag
+                            ? "message.latent_chemlib.vacuum.full"
+                            : "message.latent_chemlib.vacuum.requires_bag"
+                    ),
+                    true
+                );
+            }
             ci.cancel();
         });
     }

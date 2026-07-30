@@ -3,17 +3,14 @@ package com.gerald.latentchemlib.integration.adpother;
 import com.endertech.minecraft.mods.adpother.AdPother;
 import com.endertech.minecraft.mods.adpother.blocks.AbstractGas;
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
+import com.endertech.minecraft.mods.adpother.entities.PurifiedAir;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.sim.ChemicalState;
-import com.gerald.latentchemlib.sim.CloudInsertionService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -44,62 +41,31 @@ public final class AdpotherCloudView {
             .map(AbstractGas.class::cast);
     }
 
-    public BlockState projectedState(ServerLevel level, BlockPos pos, BlockState fallback) {
-        return gasSelectorAt(level, pos).map(AbstractGas::defaultBlockState).orElse(fallback);
-    }
-
-    public Map<Pollutant<?>, Integer> quantitiesAround(ServerLevel level, BlockPos center, int chunkRadius) {
-        Map<Pollutant<?>, Double> massBySelector = new HashMap<>();
-        int centerChunkX = center.getX() >> 4;
-        int centerChunkZ = center.getZ() >> 4;
-        for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
-            for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
-                if (chunk == null) continue;
-                for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
-                    if (!(blockEntity instanceof ChemicalCloudBlockEntity cloud)) continue;
-                    selectorFor(cloud.chemicalState()).ifPresent(selector ->
-                        massBySelector.merge(selector, cloud.chemicalState().mass(), Double::sum)
-                    );
-                }
-            }
-        }
-        Map<Pollutant<?>, Integer> quantities = new HashMap<>();
-        massBySelector.forEach((selector, mass) -> {
-            int units = (int) Math.floor(mass / CloudInsertionService.MASS_PER_ADPOTHER_UNIT);
-            if (units > 0) quantities.put(selector, units);
-        });
-        return quantities;
+    public Optional<Contact> contactAt(ServerLevel level, BlockPos pos, Vec3 samplePosition) {
+        if (!(level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud)) return Optional.empty();
+        return selectorFor(cloud.chemicalState()).flatMap(selector -> {
+            int units = com.gerald.latentchemlib.sim.GasHazardMath.wholeUnits(cloud.chemicalState().mass());
+            if (units <= 0) return Optional.empty();
+            float protectedFraction = (float) level.getEntitiesOfClass(
+                    PurifiedAir.class,
+                    new AABB(samplePosition, samplePosition).inflate(32.0)
+                ).stream()
+                .filter(air -> air.getPollutant().map(selector::equals).orElse(false))
+                .mapToDouble(air -> air.getConcentrationAt(samplePosition).toFraction())
+                .sum();
+            return Optional.of(new Contact(
+                selector,
+                com.gerald.latentchemlib.sim.GasHazardMath.attenuateUnits(units, protectedFraction)
+            ));
+        }).filter(contact -> contact.units() > 0);
     }
 
     public Detection detectionAround(ServerLevel level, BlockPos center, int radius) {
-        int gasBlocks = 0;
-        boolean explosionRisk = false;
-        int chunkRadius = Math.max(1, (radius + 15) / 16);
-        int centerChunkX = center.getX() >> 4;
-        int centerChunkZ = center.getZ() >> 4;
-        double radiusSquared = (double) radius * radius;
-        for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
-            for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
-                if (chunk == null) continue;
-                for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
-                    if (!(blockEntity instanceof ChemicalCloudBlockEntity cloud)
-                        || blockEntity.getBlockPos().distSqr(center) > radiusSquared) continue;
-                    int units = (int) Math.floor(
-                        cloud.chemicalState().mass() / CloudInsertionService.MASS_PER_ADPOTHER_UNIT
-                    );
-                    gasBlocks += Math.max(1, units);
-                    explosionRisk |= selectorFor(cloud.chemicalState())
-                        .map(selector -> selector.getPollutionCapacity() > 0
-                            && selector.defaultBlockState().getBlock() instanceof AbstractGas gas
-                            && gas.getLowerExplosiveLimit() > 0)
-                        .orElse(false);
-                }
-            }
-        }
-        return new Detection(explosionRisk, gasBlocks);
+        LatentGasHazardService.Detection detection =
+            LatentGasHazardService.INSTANCE.detectAround(level, center, radius);
+        return new Detection(detection.explosionRisk(), detection.gasBlocks());
     }
 
+    public record Contact(Pollutant<?> selector, int units) {}
     public record Detection(boolean explosionRisk, int gasBlocks) {}
 }

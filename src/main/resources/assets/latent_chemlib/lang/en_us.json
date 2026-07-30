@@ -10,5 +10,8 @@
   "tooltip.latent_chemlib.sealed_chemical_cell.temperature": "Temperature: %s K",
   "tooltip.latent_chemlib.sealed_chemical_cell.density": "Density: %s",
   "tooltip.latent_chemlib.sealed_chemical_cell.charge": "Charge: %s",
-  "tooltip.latent_chemlib.sealed_chemical_cell.energy": "Energy: %s"
+  "tooltip.latent_chemlib.sealed_chemical_cell.energy": "Energy: %s",
+  "message.latent_chemlib.vacuum.captured": "Gas captured as remediation waste",
+  "message.latent_chemlib.vacuum.full": "Vacuum bag is full",
+  "message.latent_chemlib.vacuum.requires_bag": "Equip a vacuum bag to capture this gas"
 }

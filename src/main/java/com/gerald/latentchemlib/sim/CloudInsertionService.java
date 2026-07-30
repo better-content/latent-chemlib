@@ -5,6 +5,10 @@ import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /**
  * The only supported boundary for introducing matter into the ambient Latent simulation.
  *
@@ -19,28 +23,50 @@ public final class CloudInsertionService {
 
     public InsertionResult insert(ServerLevel level, BlockPos origin, ChemicalState state) {
         if (state.mass() <= 0.0) return InsertionResult.rejected(state);
-        for (int radius = 0; radius <= 2; radius++) {
-            for (BlockPos candidate : BlockPos.betweenClosed(
-                origin.offset(-radius, -radius, -radius),
-                origin.offset(radius, radius, radius)
-            )) {
-                BlockPos pos = candidate.immutable();
-                if (!level.isInWorldBounds(pos)) continue;
-                if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing) {
-                    ChemicalState current = existing.chemicalState();
-                    if (current.mass() > 0.0 && !current.chemicalId().equals(state.chemicalId())) continue;
-                    existing.seed(state);
-                    return InsertionResult.accepted(state);
-                }
-                if (!level.getBlockState(pos).isAir() && !level.getBlockState(pos).canBeReplaced()) continue;
-                if (!level.setBlock(pos, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3)) continue;
-                if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud) {
-                    cloud.seed(state);
-                    return InsertionResult.accepted(state);
-                }
+        List<BlockPos> candidates = candidateOffsets(state.chemicalId()).stream()
+            .map(origin::offset)
+            .map(BlockPos::immutable)
+            .filter(level::isInWorldBounds)
+            .filter(level::isLoaded)
+            .toList();
+
+        for (BlockPos pos : candidates) {
+            if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing
+                && existing.chemicalState().chemicalId().equals(state.chemicalId())) {
+                existing.seed(state);
+                return InsertionResult.accepted(state);
+            }
+        }
+        for (BlockPos pos : candidates) {
+            if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity) continue;
+            if (!level.getBlockState(pos).isAir() && !level.getBlockState(pos).canBeReplaced()) continue;
+            if (!level.setBlock(pos, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3)) continue;
+            if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud) {
+                cloud.seed(state);
+                return InsertionResult.accepted(state);
             }
         }
         return InsertionResult.rejected(state);
+    }
+
+    static List<BlockPos> candidateOffsets(String chemicalId) {
+        List<BlockPos> offsets = new ArrayList<>();
+        for (int x = -3; x <= 3; x++) {
+            for (int y = -3; y <= 3; y++) {
+                for (int z = -3; z <= 3; z++) {
+                    offsets.add(new BlockPos(x, y, z));
+                }
+            }
+        }
+        int chemicalHash = chemicalId.hashCode();
+        offsets.sort(
+            Comparator.comparingInt((BlockPos pos) -> pos.distManhattan(BlockPos.ZERO))
+                .thenComparingInt(pos -> Integer.rotateLeft(pos.hashCode() ^ chemicalHash, 13))
+                .thenComparingInt(BlockPos::getX)
+                .thenComparingInt(BlockPos::getY)
+                .thenComparingInt(BlockPos::getZ)
+        );
+        return List.copyOf(offsets);
     }
 
     public int insertAdpotherUnits(ServerLevel level, BlockPos origin, ChemicalState perUnitState, int units) {

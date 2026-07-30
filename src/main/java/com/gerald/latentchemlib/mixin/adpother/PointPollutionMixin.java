@@ -14,7 +14,9 @@ public abstract class PointPollutionMixin {
     private void latentChemlib$includeClouds(CallbackInfo ci) {
         PointPollution self = (PointPollution) (Object) this;
         if (!(self.getWorldLevel() instanceof ServerLevel level)) return;
-        AdpotherCloudView.INSTANCE.quantitiesAround(level, self.getBlockPos(), 1)
-            .forEach((selector, quantity) -> self.getOrCreateInfoFor(selector).setQuantity(quantity));
+        AdpotherCloudView.INSTANCE.contactAt(level, self.getBlockPos(), self.getPosition())
+            .ifPresent(contact ->
+                self.getOrCreateInfoFor(contact.selector()).setQuantity(contact.units())
+            );
     }
 }
