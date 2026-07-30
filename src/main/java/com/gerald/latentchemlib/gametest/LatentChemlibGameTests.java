@@ -106,6 +106,34 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void adpotherCloudViewDoesNotLoadAbsentChunks(GameTestHelper helper) {
+        BlockPos absentChunkPos = new BlockPos(29_999_984, 64, 29_999_984);
+        helper.assertTrue(
+            helper.getLevel().getChunkSource().getChunkNow(
+                absentChunkPos.getX() >> 4,
+                absentChunkPos.getZ() >> 4
+            ) == null,
+            "The regression fixture must begin outside the loaded chunk set"
+        );
+        helper.assertTrue(
+            AdpotherCloudView.INSTANCE.contactAt(
+                helper.getLevel(),
+                absentChunkPos,
+                net.minecraft.world.phys.Vec3.atCenterOf(absentChunkPos)
+            ).isEmpty(),
+            "Contact lookup should return empty for an absent chunk"
+        );
+        helper.assertTrue(
+            helper.getLevel().getChunkSource().getChunkNow(
+                absentChunkPos.getX() >> 4,
+                absentChunkPos.getZ() >> 4
+            ) == null,
+            "Contact lookup must not materialize an absent chunk"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
     public static void mixedFlammableCloudsShareOneExplosionThreshold(GameTestHelper helper) {
         BlockPos firstPos = new BlockPos(1, 1, 1);
         BlockPos secondPos = firstPos.east();

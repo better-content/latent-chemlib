@@ -8,6 +8,7 @@ import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -35,15 +36,13 @@ public final class AdpotherCloudView {
     }
 
     public Optional<AbstractGas> gasSelectorAt(ServerLevel level, BlockPos pos) {
-        if (!(level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud)) return Optional.empty();
-        return selectorFor(cloud.chemicalState())
+        return loadedCloudAt(level, pos).flatMap(cloud -> selectorFor(cloud.chemicalState())
             .filter(AbstractGas.class::isInstance)
-            .map(AbstractGas.class::cast);
+            .map(AbstractGas.class::cast));
     }
 
     public Optional<Contact> contactAt(ServerLevel level, BlockPos pos, Vec3 samplePosition) {
-        if (!(level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud)) return Optional.empty();
-        return selectorFor(cloud.chemicalState()).flatMap(selector -> {
+        return loadedCloudAt(level, pos).flatMap(cloud -> selectorFor(cloud.chemicalState()).flatMap(selector -> {
             int units = com.gerald.latentchemlib.sim.GasHazardMath.wholeUnits(cloud.chemicalState().mass());
             if (units <= 0) return Optional.empty();
             float protectedFraction = (float) level.getEntitiesOfClass(
@@ -57,7 +56,14 @@ public final class AdpotherCloudView {
                 selector,
                 com.gerald.latentchemlib.sim.GasHazardMath.attenuateUnits(units, protectedFraction)
             ));
-        }).filter(contact -> contact.units() > 0);
+        })).filter(contact -> contact.units() > 0);
+    }
+
+    private Optional<ChemicalCloudBlockEntity> loadedCloudAt(ServerLevel level, BlockPos pos) {
+        LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+        if (chunk == null) return Optional.empty();
+        if (!(chunk.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud)) return Optional.empty();
+        return Optional.of(cloud);
     }
 
     public Detection detectionAround(ServerLevel level, BlockPos center, int radius) {
