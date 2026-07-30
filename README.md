@@ -14,6 +14,12 @@ ChemLib registry data.
 
 - Transparent, walkable `latent_chemlib:chemical_cloud` block entity carrying
   chemical id, mass, density, temperature, charge, and energy.
+- AdPother terminal-emission integration that retains its emitters, fuels,
+  chimneys, exact selectors, impacts, alarms, respirators, filters, and vacuum
+  bags while using Latent clouds as the sole atmospheric gas state.
+- A conserved bridge ratio of 16 Latent mass per AdPother unit. Chimney filters
+  run before handoff and vacuum cleanup is accepted only into remediation bags.
+  The bridge adds no queue or scheduler mode.
 - Cloud diffusion, cooling, dissipation, and heat-driven block erosion.
 - Gas item escape handling for item entities and player inventories.
 - Heavy element neutron flux simulation for ChemLib element stacks.

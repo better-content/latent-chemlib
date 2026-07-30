@@ -24,6 +24,8 @@ val heatSyncVersion = property("heatsync_version") as String
 val emiVersion = property("emi_version") as String
 val emiCurseFileId = property("emi_curse_file_id") as String
 val jeiVersion = property("jei_version") as String
+val adpotherVersion = property("adpother_version") as String
+val forgeEndertechVersion = property("forgeendertech_version") as String
 val modId = property("mod_id") as String
 val modName = property("mod_name") as String
 val modVersion = property("mod_version") as String
@@ -109,6 +111,7 @@ repositories {
     maven("https://maven.blamejared.com")
     flatDir {
         dirs("../heat-sync/build/libs")
+        dirs("../../cache/packwiz-downloads/mods")
     }
 }
 
@@ -126,6 +129,10 @@ dependencies {
     implementation(deobf("com.tterrag.registrate:Registrate:$registrateVersion"))
 
     implementation(deobf("curse.maven:chemlib-340666:$chemlibCurseFileId"))
+    compileOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2132"))
+    runtimeOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2132"))
+    compileOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
+    runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     compileOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
     runtimeOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
     compileOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
@@ -148,6 +155,7 @@ tasks.processResources {
         "chemlibVersion" to chemlibVersion,
         "emiVersion" to emiVersion,
         "jeiVersion" to jeiVersion,
+        "adpotherVersion" to adpotherVersion,
         "modId" to modId,
         "modName" to modName,
         "modVersion" to modVersion,

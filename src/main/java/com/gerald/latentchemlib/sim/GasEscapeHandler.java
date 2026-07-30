@@ -226,28 +226,7 @@ public class GasEscapeHandler {
      * Seeds all matter into one viable cloud. The caller may consume its source only after true.
      */
     public static boolean spawnCloud(ServerLevel level, BlockPos origin, ChemicalState state) {
-        if (state.mass() <= 0.0) return false;
-        for (int radius = 0; radius <= 2; radius++) {
-            for (BlockPos pos : BlockPos.betweenClosed(
-                origin.offset(-radius, -radius, -radius),
-                origin.offset(radius, radius, radius)
-            )) {
-                if (!level.isInWorldBounds(pos)) continue;
-                if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing) {
-                    ChemicalState current = existing.chemicalState();
-                    if (current.mass() > 0.0 && !current.chemicalId().equals(state.chemicalId())) continue;
-                    existing.seed(state);
-                    return true;
-                }
-                if (!level.getBlockState(pos).isAir() && !level.getBlockState(pos).canBeReplaced()) continue;
-                if (!level.setBlock(pos, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3)) continue;
-                if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud) {
-                    cloud.seed(state);
-                    return true;
-                }
-            }
-        }
-        return false;
+        return CloudInsertionService.INSTANCE.insert(level, origin, state).acceptedAll();
     }
 
     /**

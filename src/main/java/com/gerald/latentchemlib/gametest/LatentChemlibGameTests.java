@@ -1,6 +1,8 @@
 package com.gerald.latentchemlib.gametest;
 
 import com.gerald.latentchemlib.LatentChemlibMod;
+import com.endertech.minecraft.mods.adpother.AdPother;
+import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
@@ -38,6 +40,32 @@ public final class LatentChemlibGameTests {
         assertMachineEntity(helper, new BlockPos(3, 1, 1), LatentChemlibMod.GAS_TANK.get());
         assertMachineEntity(helper, new BlockPos(4, 1, 1), LatentChemlibMod.GAS_REACTION_CHAMBER.get());
         assertMachineEntity(helper, new BlockPos(5, 1, 1), LatentChemlibMod.GAS_RELEASE.get());
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void adpotherEmissionCreatesLatentCloudInsteadOfAdpotherGas(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon")
+            .orElseThrow(() -> new AssertionError("AdPother carbon selector must be registered"));
+
+        int emitted = carbon.generateAt(helper.getLevel(), helper.absolutePos(pos), 2, 1);
+
+        helper.assertTrue(emitted == 2, "AdPother should report both units accepted by Latent");
+        helper.assertTrue(
+            helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity,
+            "AdPother emission should create the Latent chemical cloud block entity"
+        );
+        ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) helper.getBlockEntity(pos);
+        helper.assertTrue(
+            cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"),
+            "Legacy carbon emissions should bridge to ChemLib carbon dioxide"
+        );
+        helper.assertTrue(cloud.chemicalState().mass() == 32.0, "Two AdPother units should equal 32 Latent mass");
+        helper.assertTrue(
+            !helper.getBlockState(pos).is(carbon),
+            "The integration must not place an AdPother gas block"
+        );
         helper.succeed();
     }
 

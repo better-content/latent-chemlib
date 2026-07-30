@@ -55,6 +55,13 @@ ordering="AFTER"
 side="BOTH"
 
 [[dependencies.${modId}]]
+modId="adpother"
+mandatory=true
+versionRange="[${adpotherVersion},8.1.44.0)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${modId}]]
 modId="emi"
 mandatory=false
 versionRange="[${emiVersion},)"
