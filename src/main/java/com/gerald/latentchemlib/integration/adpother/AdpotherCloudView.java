@@ -54,8 +54,8 @@ public final class AdpotherCloudView {
         int centerChunkZ = center.getZ() >> 4;
         for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
             for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
-                if (!level.getChunkSource().hasChunk(chunkX, chunkZ)) continue;
-                LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+                if (chunk == null) continue;
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                     if (!(blockEntity instanceof ChemicalCloudBlockEntity cloud)) continue;
                     selectorFor(cloud.chemicalState()).ifPresent(selector ->
@@ -81,8 +81,9 @@ public final class AdpotherCloudView {
         double radiusSquared = (double) radius * radius;
         for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
             for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
-                if (!level.getChunkSource().hasChunk(chunkX, chunkZ)) continue;
-                for (BlockEntity blockEntity : level.getChunk(chunkX, chunkZ).getBlockEntities().values()) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+                if (chunk == null) continue;
+                for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                     if (!(blockEntity instanceof ChemicalCloudBlockEntity cloud)
                         || blockEntity.getBlockPos().distSqr(center) > radiusSquared) continue;
                     int units = (int) Math.floor(
