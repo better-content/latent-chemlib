@@ -73,7 +73,15 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
     }
 
     public static void tick(Level level, BlockPos pos, BlockState blockState, ChemicalCloudBlockEntity entity) {
-        if (level.isClientSide || !(level instanceof ServerLevel serverLevel)) return;
+        if (level.isClientSide) {
+            if (level.random.nextInt(4) == 0 && entity.state.mass() > 0.0) {
+                level.addParticle(net.minecraft.core.particles.ParticleTypes.AMBIENT_ENTITY_EFFECT,
+                    pos.getX() + level.random.nextDouble(), pos.getY() + level.random.nextDouble(), pos.getZ() + level.random.nextDouble(),
+                    0.72, 0.86, 0.92);
+            }
+            return;
+        }
+        if (!(level instanceof ServerLevel serverLevel)) return;
         int cadence = EmergentMath.updateCadence(entity.state);
         if (cadence <= 0 || serverLevel.getGameTime() % cadence != 0L) return;
         if (!SimulationScheduler.INSTANCE.trySpend(serverLevel, SimulationBudget.CLOUD_UPDATES, 1)) return;
