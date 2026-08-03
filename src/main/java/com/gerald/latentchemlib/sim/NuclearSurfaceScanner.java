@@ -39,6 +39,7 @@ public class NuclearSurfaceScanner {
     private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activeBlockInventories = new WeakHashMap<>();
     private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activePlacedMaterials = new WeakHashMap<>();
     private final Map<UUID, Integer> playerSlotCursors = new java.util.HashMap<>();
+    private final Map<ServerLevel, Map<BlockPos, Integer>> blockInventorySlotCursors = new WeakHashMap<>();
     private final Map<ServerLevel, Integer> surfaceClassCursors = new WeakHashMap<>();
 
     @SubscribeEvent
@@ -81,6 +82,7 @@ public class NuclearSurfaceScanner {
         ChunkPos unloaded = event.getChunk().getPos();
         blockInventories(level).removeIf(pos -> new ChunkPos(pos).equals(unloaded));
         placedMaterials(level).removeIf(pos -> new ChunkPos(pos).equals(unloaded));
+        blockInventorySlotCursors(level).keySet().removeIf(pos -> new ChunkPos(pos).equals(unloaded));
     }
 
     @SubscribeEvent
@@ -90,6 +92,7 @@ public class NuclearSurfaceScanner {
         activeBlockInventories.remove(level);
         activePlacedMaterials.remove(level);
         activePlayers.remove(level);
+        blockInventorySlotCursors.remove(level);
         surfaceClassCursors.remove(level);
         level.players().forEach(player -> playerSlotCursors.remove(player.getUUID()));
     }
@@ -112,6 +115,10 @@ public class NuclearSurfaceScanner {
         if (size <= 0) return 0;
         int next = cursor + Math.max(0, advanced);
         return next % size;
+    }
+
+    static int slotAt(int cursor, int size, int offset) {
+        return size <= 0 ? 0 : Math.floorMod(cursor + offset, size);
     }
 
     static int surfaceClassAt(int cursor, int attempt) {
@@ -226,9 +233,15 @@ public class NuclearSurfaceScanner {
         boolean[] canContinue = { true };
         blockInventories(level).visit(1, pos -> {
             BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
-            if (blockEntity == null) return ActiveHolderSet.Decision.REMOVE;
+            if (blockEntity == null) {
+                blockInventorySlotCursors(level).remove(pos);
+                return ActiveHolderSet.Decision.REMOVE;
+            }
             Optional<IItemHandler> optional = blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).resolve();
-            if (optional.isEmpty() || !hasRelevantStack(optional.get())) return ActiveHolderSet.Decision.REMOVE;
+            if (optional.isEmpty() || !hasRelevantStack(optional.get())) {
+                blockInventorySlotCursors(level).remove(pos);
+                return ActiveHolderSet.Decision.REMOVE;
+            }
             if (!scanBlockEntityInventory(level, blockEntity)) {
                 canContinue[0] = false;
                 return ActiveHolderSet.Decision.STOP;
@@ -240,42 +253,53 @@ public class NuclearSurfaceScanner {
 
     private boolean scanOnePlacedMaterial(ServerLevel level) {
         boolean[] canContinue = { true };
-        placedMaterials(level).visit(1, pos -> {
-            if (!level.isLoaded(pos)) return ActiveHolderSet.Decision.REMOVE;
-            PlacedNuclearData data = PlacedNuclearData.get(level);
-            PlacedNuclearData.Entry entry = data.get(pos).orElse(null);
-            if (entry == null) return ActiveHolderSet.Decision.REMOVE;
-            if (!PlacedNuclearResolver.INSTANCE.matches(level.getBlockState(pos), entry)) {
-                data.remove(pos);
-                return ActiveHolderSet.Decision.REMOVE;
-            }
-            long elapsedTicks = Math.max(0L, level.getGameTime() - entry.processedGameTime());
-            if (elapsedTicks <= 0L) return ActiveHolderSet.Decision.KEEP;
-            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) {
-                canContinue[0] = false;
-                return ActiveHolderSet.Decision.STOP;
-            }
-            LoadedExposureClock.Window exposure = entry.exposureWindow(elapsedTicks);
-            NuclearSimulationService.StateProcessResult result = NuclearSimulationService.INSTANCE.processPlacedState(
-                level, pos, entry.state(), elapsedTicks / 20.0,
-                NuclearSimulationService.environment(level, pos),
-                NuclearSimulationService.heatStorage(level.getBlockEntity(pos)),
-                net.minecraft.util.RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "placed-state"))
-            );
-            if (result.budgetExhausted()) {
-                canContinue[0] = false;
-                return ActiveHolderSet.Decision.STOP;
-            }
-            data.put(pos, entry.advance(result.state(), elapsedTicks, level.getGameTime()));
-            return ActiveHolderSet.Decision.KEEP;
-        });
+        placedMaterials(level).visit(1, pos -> scanPlacedMaterial(level, pos, canContinue));
         return canContinue[0];
+    }
+
+    private ActiveHolderSet.Decision scanPlacedMaterial(ServerLevel level, BlockPos pos, boolean[] canContinue) {
+        if (!level.isLoaded(pos)) return ActiveHolderSet.Decision.REMOVE;
+        PlacedNuclearData data = PlacedNuclearData.get(level);
+        PlacedNuclearData.Entry entry = data.get(pos).orElse(null);
+        if (entry == null) return ActiveHolderSet.Decision.REMOVE;
+        if (!PlacedNuclearResolver.INSTANCE.matches(level.getBlockState(pos), entry)) {
+            data.remove(pos);
+            return ActiveHolderSet.Decision.REMOVE;
+        }
+        long elapsedTicks = Math.max(0L, level.getGameTime() - entry.processedGameTime());
+        if (elapsedTicks <= 0L) return ActiveHolderSet.Decision.KEEP;
+        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) {
+            canContinue[0] = false;
+            return ActiveHolderSet.Decision.STOP;
+        }
+        LoadedExposureClock.Window exposure = entry.exposureWindow(elapsedTicks);
+        NuclearSimulationService.StateProcessResult result = NuclearSimulationService.INSTANCE.processPlacedState(
+            level, pos, entry.state(), elapsedTicks / 20.0,
+            NuclearSimulationService.environment(level, pos),
+            NuclearSimulationService.heatStorage(level.getBlockEntity(pos)),
+            net.minecraft.util.RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "placed-state"))
+        );
+        if (result.budgetExhausted()) {
+            canContinue[0] = false;
+            return ActiveHolderSet.Decision.STOP;
+        }
+        data.put(pos, entry.advance(result.state(), elapsedTicks, level.getGameTime()));
+        return ActiveHolderSet.Decision.KEEP;
     }
 
     /** Deterministic live-server proof seam; production scheduling still uses bounded round-robin visits. */
     public void scanPlacedNow(ServerLevel level, BlockPos pos) {
         placedMaterials(level).add(pos.immutable());
-        scanOnePlacedMaterial(level);
+        boolean[] canContinue = { true };
+        ActiveHolderSet.Decision decision = scanPlacedMaterial(level, pos, canContinue);
+        if (decision == ActiveHolderSet.Decision.REMOVE) placedMaterials(level).remove(pos);
+    }
+
+    /** Deterministic live-server proof seam using the production per-holder slot cursor and budgets. */
+    public boolean scanBlockInventoryNow(ServerLevel level, BlockEntity blockEntity) {
+        if (blockEntity == null || blockEntity.getLevel() != level) return false;
+        blockInventories(level).add(blockEntity.getBlockPos().immutable());
+        return scanBlockEntityInventory(level, blockEntity);
     }
 
     private static void advectInLava(ServerLevel level, ItemEntity item) {
@@ -291,11 +315,18 @@ public class NuclearSurfaceScanner {
         if (optional.isEmpty() || !(optional.get() instanceof IItemHandlerModifiable handler)) return true;
         if (!hasRelevantStack(handler)) return true;
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return false;
+        int size = handler.getSlots();
+        if (size <= 0) return true;
+        BlockPos holderPos = blockEntity.getBlockPos().immutable();
+        Map<BlockPos, Integer> cursors = blockInventorySlotCursors(level);
+        int start = Math.floorMod(cursors.getOrDefault(holderPos, 0), size);
         NuclearSimulationService.NuclearEnvironment baseEnvironment = NuclearSimulationService.environment(level, blockEntity.getBlockPos());
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
+        for (int offset = 0; offset < size; offset++) {
+            int slot = slotAt(start, size, offset);
             ItemStack current = handler.getStackInSlot(slot);
             NuclearSimulationService.NuclearEnvironment environment = inventoryEnvironment(handler, slot, baseEnvironment);
             if (!NuclearSimulationService.INSTANCE.canProcessStack(current, environment)) continue;
+            cursors.put(holderPos, advanceCursor(slot, size, 1));
             ItemStack working = current.copy();
             NuclearSimulationService.ProcessStatus status = processHandlerStack(level, blockEntity, handler, slot, working, environment);
             boolean exposureAdvanced = !ItemStack.matches(current, working);
@@ -308,6 +339,7 @@ public class NuclearSurfaceScanner {
             }
             if (status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED) return false;
         }
+        cursors.put(holderPos, advanceCursor(start, size, 1));
         return true;
     }
 
@@ -334,6 +366,10 @@ public class NuclearSurfaceScanner {
 
     private ActiveHolderSet<BlockPos> blockInventories(ServerLevel level) {
         return activeBlockInventories.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
+    }
+
+    private Map<BlockPos, Integer> blockInventorySlotCursors(ServerLevel level) {
+        return blockInventorySlotCursors.computeIfAbsent(level, ignored -> new java.util.HashMap<>());
     }
 
     private ActiveHolderSet<BlockPos> placedMaterials(ServerLevel level) {

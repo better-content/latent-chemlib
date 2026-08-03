@@ -82,6 +82,21 @@ class NuclearSimulationServiceTest {
         assertEquals(0, NuclearSurfaceScanner.advanceCursor(0, 0, 4));
         assertEquals(3, NuclearSurfaceScanner.advanceCursor(1, 5, 2));
         assertEquals(1, NuclearSurfaceScanner.advanceCursor(4, 5, 2));
+        assertEquals(4, NuclearSurfaceScanner.slotAt(-1, 5, 0));
+    }
+
+    @Test
+    void oneOperationRoundsGiveEveryInventorySlotFirstOpportunity() {
+        Set<Integer> visited = new LinkedHashSet<>();
+        int cursor = 0;
+        for (int constrainedRound = 0; constrainedRound < 27; constrainedRound++) {
+            int selected = NuclearSurfaceScanner.slotAt(cursor, 27, 0);
+            visited.add(selected);
+            cursor = NuclearSurfaceScanner.advanceCursor(selected, 27, 1);
+        }
+
+        assertEquals(27, visited.size());
+        assertEquals(0, cursor);
     }
 
     @Test

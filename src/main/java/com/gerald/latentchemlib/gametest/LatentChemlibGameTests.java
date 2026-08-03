@@ -45,6 +45,7 @@ import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -687,6 +688,31 @@ public final class LatentChemlibGameTests {
                 "Daughter matter must be explicitly Tl-205 rather than inheriting Bi-209");
             helper.assertTrue(NuclearStackData.provenance(stored).equals("chemlib:bismuth_dust"), "Alternate-form provenance must survive daughter formation");
         });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearInventoryFairness", timeoutTicks = 40)
+    public static void blockInventoryCursorAdvancesLaterRadioactiveSlotsUnderOneMutationPerScan(GameTestHelper helper) {
+        BlockPos chestPos = new BlockPos(2, 1, 1);
+        helper.setBlock(chestPos, Blocks.CHEST);
+        ChestBlockEntity chest = (ChestBlockEntity) helper.getBlockEntity(chestPos);
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) chest.setItem(slot, new ItemStack(Items.COBBLESTONE));
+        Item bismuthDust = ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth_dust"));
+        chest.setItem(0, new ItemStack(bismuthDust));
+        chest.setItem(10, new ItemStack(bismuthDust));
+        chest.setChanged();
+
+        helper.assertTrue(NuclearSurfaceScanner.INSTANCE.scanBlockInventoryNow(helper.getLevel(), chest),
+            "First constrained holder scan must complete within its budgets");
+        helper.assertTrue(chest.getItem(0).hasTag() && chest.getItem(0).getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+            "The first scan must process the first radioactive slot");
+        helper.assertTrue(!chest.getItem(10).hasTag(),
+            "One holder scan must stop after its first mutation so the proof remains one-operation constrained");
+
+        helper.assertTrue(NuclearSurfaceScanner.INSTANCE.scanBlockInventoryNow(helper.getLevel(), chest),
+            "Second constrained holder scan must complete within its budgets");
+        helper.assertTrue(chest.getItem(10).hasTag() && chest.getItem(10).getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+            "The persistent holder cursor must reach a later radioactive slot on the next bounded scan");
+        helper.succeed();
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 80)
