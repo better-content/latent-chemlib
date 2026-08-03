@@ -130,6 +130,16 @@ class NuclearDecayRuleTest {
         assertFalse(rule.matches(new ChemicalState("chemlib:uranium", 0.0, 1.0, 293.0, 0.0, 0.0)));
     }
 
+    @Test
+    void isotopeMassNumberParsesSymbolAndRejectsMalformedValues() {
+        assertEquals(238, rule(10.0).isotopeMassNumber());
+        NuclearDecayRule malformed = new NuclearDecayRule(
+            "test", "chemlib:uranium", "", "", "not-an-isotope", 10.0,
+            1.0, 0.0, 0.0, 0.0, 0.0f
+        );
+        assertEquals(0, malformed.isotopeMassNumber());
+    }
+
     private static NuclearDecayRule rule(double halfLifeSeconds) {
         return new NuclearDecayRule(
             "test",

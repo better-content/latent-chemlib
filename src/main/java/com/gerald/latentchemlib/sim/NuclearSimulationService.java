@@ -1,6 +1,8 @@
 package com.gerald.latentchemlib.sim;
 
 import com.gerald.latentchemlib.LatentChemlibMod;
+import com.gerald.latentchemlib.api.IsotopeEnsemble;
+import com.gerald.latentchemlib.api.IsotopeItemData;
 import com.gerald.latentchemlib.data.ChemicalTraits;
 import com.gerald.latentchemlib.data.LatentDataManager;
 import com.gerald.latentchemlib.data.NuclearDecayRule;
@@ -153,9 +155,17 @@ public class NuclearSimulationService {
         ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
         if (id == null) return Optional.empty();
         ChemicalState state = stackState(id.toString(), element, stack.getCount());
+        long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
+        LoadedExposureClock.Window exposure = LoadedExposureClock.advance(stack.getOrCreateTag(), elapsedTicks, random.nextLong());
+        IsotopeEnsemble ensemble = IsotopeItemData.explicit(stack);
+        int selectedMass = ensemble.isNatural()
+            ? 0
+            : ensemble.select(LoadedExposureClock.deterministicRoll(exposure, "isotope:" + id));
         for (NuclearDecayRule rule : LatentDataManager.INSTANCE.nuclearDecayRules()) {
             if (!rule.matches(state)) continue;
-            if (random.nextDouble() < rule.decayProbability(elapsedSeconds)) {
+            if (selectedMass > 0 && selectedMass != rule.isotopeMassNumber()) continue;
+            double decayRoll = LoadedExposureClock.deterministicRoll(exposure, "decay:" + rule.id());
+            if (decayRoll < rule.decayProbability(elapsedTicks / 20.0)) {
                 Item daughter = rule.outputChemicalItemValue();
                 if (isMissing(daughter)) return Optional.empty();
                 return Optional.of(new NuclearStackEvent(

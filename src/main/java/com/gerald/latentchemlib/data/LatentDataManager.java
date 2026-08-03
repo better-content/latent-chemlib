@@ -29,6 +29,7 @@ public class LatentDataManager implements PreparableReloadListener {
     private volatile MachineProfile machineProfile = MachineProfile.defaults();
     private volatile List<ReactionRule> reactionRules = List.of();
     private volatile List<NuclearDecayRule> nuclearDecayRules = List.of();
+    private volatile IsotopeCatalog isotopeCatalog = IsotopeCatalog.empty();
 
     public ChemicalTraits traits(String chemicalId) {
         ChemicalTraits configured = traits.get(chemicalId);
@@ -51,6 +52,10 @@ public class LatentDataManager implements PreparableReloadListener {
         return nuclearDecayRules;
     }
 
+    public IsotopeCatalog isotopeCatalog() {
+        return isotopeCatalog;
+    }
+
     @Override
     public CompletableFuture<Void> reload(PreparationBarrier barrier, ResourceManager resourceManager, ProfilerFiller prepProfiler, ProfilerFiller reloadProfiler, Executor backgroundExecutor, Executor gameExecutor) {
         return CompletableFuture.supplyAsync(() -> load(resourceManager), backgroundExecutor)
@@ -61,11 +66,13 @@ public class LatentDataManager implements PreparableReloadListener {
                 machineProfile = snapshot.machineProfile();
                 reactionRules = snapshot.reactionRules();
                 nuclearDecayRules = snapshot.nuclearDecayRules();
+                isotopeCatalog = snapshot.isotopeCatalog();
                 LatentChemlibMod.LOGGER.info(
-                    "Loaded {} latent chemical trait overrides, {} reaction rules, and {} nuclear decay rules",
+                    "Loaded {} latent chemical trait overrides, {} reaction rules, {} nuclear decay rules, and {} known isotopes",
                     traits.size(),
                     reactionRules.size(),
-                    nuclearDecayRules.size()
+                    nuclearDecayRules.size(),
+                    isotopeCatalog.allKnown().size()
                 );
             }, gameExecutor);
     }
@@ -74,6 +81,7 @@ public class LatentDataManager implements PreparableReloadListener {
         Map<String, ChemicalTraits> loadedTraits = new HashMap<>();
         java.util.ArrayList<ReactionRule> loadedRules = new java.util.ArrayList<>();
         java.util.ArrayList<NuclearDecayRule> loadedDecayRules = new java.util.ArrayList<>();
+        Map<String, IsotopeDefinition> loadedIsotopes = new HashMap<>();
         resourceManager.listResources("chemical_traits", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
             try (var reader = resource.openAsReader()) {
                 JsonObject json = GSON.fromJson(reader, JsonObject.class);
@@ -140,7 +148,35 @@ public class LatentDataManager implements PreparableReloadListener {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent nuclear decay file {}", id, ex);
             }
         });
-        return new Snapshot(Map.copyOf(loadedTraits), profile, loadedMachineProfile, List.copyOf(loadedRules), List.copyOf(loadedDecayRules));
+        resourceManager.listResources("isotope_catalog", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
+            try (var reader = resource.openAsReader()) {
+                JsonElement root = GSON.fromJson(reader, JsonElement.class);
+                JsonArray isotopes = root.isJsonArray() ? root.getAsJsonArray() : root.getAsJsonObject().getAsJsonArray("isotopes");
+                if (isotopes == null) return;
+                for (JsonElement element : isotopes) {
+                    if (element == null || !element.isJsonObject()) continue;
+                    IsotopeDefinition definition = isotopeFromJson(element.getAsJsonObject());
+                    if (!definition.elementId().isBlank() && definition.massNumber() > 0) {
+                        loadedIsotopes.put(isotopeKey(definition.elementId(), definition.massNumber()), definition);
+                    }
+                }
+            } catch (Exception ex) {
+                LatentChemlibMod.LOGGER.warn("Ignoring invalid latent isotope catalogue file {}", id, ex);
+            }
+        });
+        for (NuclearDecayRule rule : loadedDecayRules) {
+            int massNumber = rule.isotopeMassNumber();
+            if (massNumber <= 0) continue;
+            loadedIsotopes.putIfAbsent(
+                isotopeKey(rule.inputChemical(), massNumber),
+                new IsotopeDefinition(rule.inputChemical(), massNumber, rule.isotope(), 0.0, rule.halfLifeSeconds(), rule.outputChemical(), false)
+            );
+        }
+        return new Snapshot(
+            Map.copyOf(loadedTraits), profile, loadedMachineProfile,
+            List.copyOf(loadedRules), List.copyOf(loadedDecayRules),
+            new IsotopeCatalog(List.copyOf(loadedIsotopes.values()))
+        );
     }
 
     private ChemicalTraits traitsFromJson(JsonObject json, ChemicalTraits fallback) {
@@ -210,6 +246,27 @@ public class LatentDataManager implements PreparableReloadListener {
         return value == null ? fallback : value.getAsInt();
     }
 
+    private static boolean bool(JsonObject json, String key, boolean fallback) {
+        JsonElement value = json == null ? null : json.get(key);
+        return value == null ? fallback : value.getAsBoolean();
+    }
+
+    private static IsotopeDefinition isotopeFromJson(JsonObject json) {
+        return new IsotopeDefinition(
+            text(json, "element", text(json, "element_id", "")),
+            integer(json, "mass_number", 0),
+            text(json, "symbol", ""),
+            number(json, "natural_abundance", 0.0),
+            number(json, "half_life_seconds", 0.0),
+            text(json, "daughter_chemical", ""),
+            bool(json, "stable", false)
+        );
+    }
+
+    private static String isotopeKey(String elementId, int massNumber) {
+        return elementId + '#' + massNumber;
+    }
+
     private static ReactionRule ruleFromJson(JsonObject json, String fallbackId) {
         return new ReactionRule(
             text(json, "id", fallbackId),
@@ -250,6 +307,7 @@ public class LatentDataManager implements PreparableReloadListener {
         SchedulerProfile schedulerProfile,
         MachineProfile machineProfile,
         List<ReactionRule> reactionRules,
-        List<NuclearDecayRule> nuclearDecayRules
+        List<NuclearDecayRule> nuclearDecayRules,
+        IsotopeCatalog isotopeCatalog
     ) {}
 }

@@ -18,6 +18,17 @@ public record NuclearDecayRule(
     double energyDelta,
     float heatEmission
 ) {
+    public int isotopeMassNumber() {
+        if (isotope == null || isotope.isBlank()) return 0;
+        int separator = isotope.lastIndexOf('-');
+        String value = separator >= 0 ? isotope.substring(separator + 1) : isotope.replaceAll("\\D+", "");
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
     public boolean matches(ChemicalState state) {
         return halfLifeSeconds > 0.0 && state.massOf(inputChemical) > 0.0;
     }

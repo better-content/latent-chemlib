@@ -153,9 +153,12 @@ public class NuclearSurfaceScanner {
             if (!NuclearSimulationService.INSTANCE.canProcessStack(current, environment)) continue;
             ItemStack working = current.copy();
             NuclearSimulationService.ProcessStatus status = processHandlerStack(level, blockEntity, handler, slot, working, environment);
-            if (status == NuclearSimulationService.ProcessStatus.MUTATED) {
+            boolean exposureAdvanced = !ItemStack.matches(current, working);
+            if (status == NuclearSimulationService.ProcessStatus.MUTATED || exposureAdvanced) {
                 handler.setStackInSlot(slot, working);
                 blockEntity.setChanged();
+            }
+            if (status == NuclearSimulationService.ProcessStatus.MUTATED) {
                 return true;
             }
             if (status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED) return false;
@@ -181,7 +184,11 @@ public class NuclearSurfaceScanner {
             environment,
             level.getRandom()
         );
-        if (event.isEmpty()) return NuclearSimulationService.ProcessStatus.UNCHANGED;
+        if (event.isEmpty()) {
+            inventory.setItem(slot, stack);
+            inventory.setChanged();
+            return NuclearSimulationService.ProcessStatus.UNCHANGED;
+        }
         NuclearSimulationService.NuclearStackEvent nuclearEvent = event.get();
         if (nuclearEvent.type() == NuclearSimulationService.NuclearEventType.CAPTURE && !canPlaceAdjacent(inventory, slot, outputStack(nuclearEvent))) {
             return NuclearSimulationService.ProcessStatus.UNCHANGED;
