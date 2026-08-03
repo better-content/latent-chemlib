@@ -4,6 +4,7 @@ import com.gerald.latentchemlib.block.ChemicalCloudBlock;
 import com.gerald.latentchemlib.block.LatentMachineBlock;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
+import com.gerald.latentchemlib.api.IChemicalStateHandler;
 import com.gerald.latentchemlib.data.LatentDataManager;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.sim.GasEscapeHandler;
@@ -18,6 +19,7 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
@@ -51,6 +53,8 @@ public class LatentChemlibMod {
     public static final RegistryObject<Block> GAS_TANK = machine("gas_tank");
     public static final RegistryObject<Block> GAS_REACTION_CHAMBER = machine("gas_reaction_chamber");
     public static final RegistryObject<Block> GAS_RELEASE = machine("gas_release");
+    public static final RegistryObject<Block> PNEUMATIC_CHEMICAL_TUBE = machine("pneumatic_chemical_tube");
+    public static final RegistryObject<Block> DRY_AIR_SEPARATOR = machine("dry_air_separator");
     public static final RegistryObject<Item> SEALED_CHEMICAL_CELL =
         ITEMS.register("sealed_chemical_cell", () -> new ChemicalCellItem(new Item.Properties()));
 
@@ -65,7 +69,9 @@ public class LatentChemlibMod {
                 GAS_CAPTURE.get(),
                 GAS_TANK.get(),
                 GAS_REACTION_CHAMBER.get(),
-                GAS_RELEASE.get()
+                GAS_RELEASE.get(),
+                PNEUMATIC_CHEMICAL_TUBE.get(),
+                DRY_AIR_SEPARATOR.get()
             ).build(null));
 
     public LatentChemlibMod() {
@@ -73,6 +79,7 @@ public class LatentChemlibMod {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
+        modBus.addListener(this::registerCapabilities);
         MinecraftForge.EVENT_BUS.addListener(this::addReloadListeners);
         MinecraftForge.EVENT_BUS.register(SimulationScheduler.INSTANCE);
         MinecraftForge.EVENT_BUS.register(GasEscapeHandler.INSTANCE);
@@ -92,5 +99,9 @@ public class LatentChemlibMod {
 
     private void addReloadListeners(AddReloadListenerEvent event) {
         event.addListener(LatentDataManager.INSTANCE);
+    }
+
+    private void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.register(IChemicalStateHandler.class);
     }
 }

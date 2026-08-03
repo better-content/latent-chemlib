@@ -4,6 +4,8 @@
   "block.latent_chemlib.gas_tank": "Gas Tank",
   "block.latent_chemlib.gas_reaction_chamber": "Gas Reaction Chamber",
   "block.latent_chemlib.gas_release": "Gas Release",
+  "block.latent_chemlib.pneumatic_chemical_tube": "Pneumatic/Chemical Tube Boundary",
+  "block.latent_chemlib.dry_air_separator": "Dry-Air Separator",
   "item.latent_chemlib.sealed_chemical_cell": "Sealed Chemical Cell",
   "tooltip.latent_chemlib.sealed_chemical_cell.empty": "Empty",
   "tooltip.latent_chemlib.sealed_chemical_cell.mass": "Mass: %s",
@@ -14,4 +16,6 @@
   "message.latent_chemlib.vacuum.captured": "Gas captured as remediation waste",
   "message.latent_chemlib.vacuum.full": "Vacuum bag is full",
   "message.latent_chemlib.vacuum.requires_bag": "Equip a vacuum bag to capture this gas"
+  ,"message.latent_chemlib.pneumatic_chemical_tube.mode.air": "Tube mode: compressed air"
+  ,"message.latent_chemlib.pneumatic_chemical_tube.mode.chemical": "Tube mode: Latent chemical mixture"
 }

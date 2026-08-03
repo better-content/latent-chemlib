@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["ICI", "TGT", "ICI"],
+  "key": {
+    "I": { "item": "pneumaticcraft:ingot_iron_compressed" },
+    "C": { "item": "latent_chemlib:sealed_chemical_cell" },
+    "T": { "item": "pneumaticcraft:pressure_tube" },
+    "G": { "item": "latent_chemlib:gas_tank" }
+  },
+  "result": { "item": "latent_chemlib:pneumatic_chemical_tube", "count": 4 }
+}

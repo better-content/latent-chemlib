@@ -26,6 +26,7 @@ val emiCurseFileId = property("emi_curse_file_id") as String
 val jeiVersion = property("jei_version") as String
 val adpotherVersion = property("adpother_version") as String
 val forgeEndertechVersion = property("forgeendertech_version") as String
+val pneumaticCraftVersion = property("pneumaticcraft_version") as String
 val modId = property("mod_id") as String
 val modName = property("mod_name") as String
 val modVersion = property("mod_version") as String
@@ -133,6 +134,8 @@ dependencies {
     runtimeOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2132"))
     compileOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
+    compileOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
+    runtimeOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
     compileOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
     runtimeOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
     compileOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
@@ -156,6 +159,7 @@ tasks.processResources {
         "emiVersion" to emiVersion,
         "jeiVersion" to jeiVersion,
         "adpotherVersion" to adpotherVersion,
+        "pneumaticCraftVersion" to pneumaticCraftVersion,
         "modId" to modId,
         "modName" to modName,
         "modVersion" to modVersion,

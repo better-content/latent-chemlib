@@ -34,6 +34,10 @@ public class LatentMachineBlock extends BaseEntityBlock {
     public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
         BlockEntity blockEntity = level.getBlockEntity(pos);
         if (blockEntity instanceof LatentMachineBlockEntity machine) {
+            if (machine.isPneumaticChemicalTube() && player.isShiftKeyDown() && player.getItemInHand(hand).isEmpty()) {
+                if (!level.isClientSide) machine.cycleTransportMode(player);
+                return InteractionResult.sidedSuccess(level.isClientSide);
+            }
             return machine.useHeldCell(player, hand);
         }
         return InteractionResult.PASS;

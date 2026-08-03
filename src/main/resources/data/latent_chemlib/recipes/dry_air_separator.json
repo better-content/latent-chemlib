@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["ITI", "PGP", "III"],
+  "key": {
+    "I": { "item": "pneumaticcraft:ingot_iron_compressed" },
+    "T": { "item": "pneumaticcraft:pressure_tube" },
+    "P": { "item": "pneumaticcraft:plastic" },
+    "G": { "item": "latent_chemlib:gas_tank" }
+  },
+  "result": { "item": "latent_chemlib:dry_air_separator" }
+}

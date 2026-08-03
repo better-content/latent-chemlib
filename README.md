@@ -28,6 +28,15 @@ ChemLib registry data.
   - `latent_chemlib:gas_tank`
   - `latent_chemlib:gas_reaction_chamber`
   - `latent_chemlib:gas_release`
+  - `latent_chemlib:pneumatic_chemical_tube`
+  - `latent_chemlib:dry_air_separator`
+- A selectable PNCR boundary whose default air mode participates in the native
+  pressure network and whose chemical mode transports the complete Latent
+  multi-species state. The native-air and chemical ledgers remain separate
+  across mode changes; there is no implicit compatibility conversion.
+- A dry-air separator which consumes finite native PNCR compressed-air batches
+  and produces a conserved nitrogen/oxygen/argon/carbon-dioxide mixture through
+  Latent's multi-species capability.
 - File-based datapack reload support for:
   - `data/latent_chemlib/chemical_traits/*.json`
   - `data/latent_chemlib/scheduler_profiles/default.json`
@@ -44,6 +53,7 @@ ChemLib registry data.
 - Create: New Age `1.1.7f`
 - ChemLib `2.0.19`
 - Alchemistry `2.3.4`
+- PneumaticCraft: Repressurized `6.0.22`
 - EMI and JEI as optional client integrations
 
 ## Development
@@ -60,8 +70,9 @@ Common tasks:
 The JVM unit coverage gate is intentionally focused on the pure simulation and
 configuration core. Forge event handlers and block entities are integration
 boundaries. The bundled Forge GameTests cover the current in-world block entity
-surfaces: cloud state, machine block entity creation, capture, release, and
-reaction chamber agitation.
+surfaces: cloud state, machine block entity creation, capture, release,
+reaction chamber agitation, PNCR pressure-network participation, selectable
+transport authority, lossless mixture movement, and finite dry-air separation.
 `verifyFast` runs the JVM coverage gate. `verifyFull` adds the headless Forge GameTest pass without the old property-driven rerun path.
 
 ## Pack Configuration

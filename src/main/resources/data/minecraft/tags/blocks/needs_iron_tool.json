@@ -4,6 +4,8 @@
     "latent_chemlib:gas_capture",
     "latent_chemlib:gas_tank",
     "latent_chemlib:gas_reaction_chamber",
-    "latent_chemlib:gas_release"
+    "latent_chemlib:gas_release",
+    "latent_chemlib:pneumatic_chemical_tube",
+    "latent_chemlib:dry_air_separator"
   ]
 }

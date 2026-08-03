@@ -1,6 +1,7 @@
 package com.gerald.latentchemlib.gametest;
 
 import com.gerald.latentchemlib.LatentChemlibMod;
+import com.gerald.latentchemlib.api.LatentCapabilities;
 import com.endertech.minecraft.mods.adpother.AdPother;
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
@@ -8,6 +9,8 @@ import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
 import com.gerald.latentchemlib.integration.adpother.LatentGasHazardService;
+import com.gerald.latentchemlib.integration.pneumatic.DryAirSeparation;
+import com.gerald.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.GasFluidCodec;
 import net.minecraft.core.BlockPos;
@@ -21,6 +24,7 @@ import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import me.desht.pneumaticcraft.api.PNCCapabilities;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.gametest.GameTestHolder;
@@ -42,7 +46,97 @@ public final class LatentChemlibGameTests {
         assertMachineEntity(helper, new BlockPos(3, 1, 1), LatentChemlibMod.GAS_TANK.get());
         assertMachineEntity(helper, new BlockPos(4, 1, 1), LatentChemlibMod.GAS_REACTION_CHAMBER.get());
         assertMachineEntity(helper, new BlockPos(5, 1, 1), LatentChemlibMod.GAS_RELEASE.get());
+        assertMachineEntity(helper, new BlockPos(6, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get());
+        assertMachineEntity(helper, new BlockPos(7, 1, 1), LatentChemlibMod.DRY_AIR_SEPARATOR.get());
         helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void pneumaticChemicalTubeSelectsExactlyOneTransportAuthority(GameTestHelper helper) {
+        LatentMachineBlockEntity tube = placeMachine(
+            helper, new BlockPos(1, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get()
+        );
+        tube.pneumaticAirHandler().addAir(1_500);
+
+        helper.assertTrue(tube.transportMode() == PneumaticChemistryMode.AIR, "New and legacy-unspecified tubes must default to native air mode");
+        helper.assertTrue(tube.getCapability(PNCCapabilities.AIR_HANDLER_MACHINE_CAPABILITY).isPresent(), "Air mode must expose PNCR's native air capability");
+        helper.assertTrue(!tube.getCapability(LatentCapabilities.CHEMICAL_STATE).isPresent(), "Air mode must not expose Latent chemical matter");
+
+        tube.setTransportMode(PneumaticChemistryMode.CHEMICAL);
+        helper.assertTrue(!tube.getCapability(PNCCapabilities.AIR_HANDLER_MACHINE_CAPABILITY).isPresent(), "Chemical mode must isolate PNCR air");
+        helper.assertTrue(tube.getCapability(LatentCapabilities.CHEMICAL_STATE).isPresent(), "Chemical mode must expose full Latent mixture state");
+        helper.assertTrue(tube.pneumaticAirHandler().getAir() == 1_500, "Changing mode must not migrate or destroy native compressed air");
+
+        tube.setTransportMode(PneumaticChemistryMode.AIR);
+        helper.assertTrue(tube.pneumaticAirHandler().getAir() == 1_500, "Returning to air mode must reveal the untouched native ledger");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
+    public static void pneumaticChemicalTubeAirModeJoinsNativePressureNetwork(GameTestHelper helper) {
+        BlockPos boundaryPos = new BlockPos(1, 1, 1);
+        BlockPos pressureTubePos = boundaryPos.east();
+        LatentMachineBlockEntity boundary = placeMachine(helper, boundaryPos, LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get());
+        Block pressureTube = ForgeRegistries.BLOCKS.getValue(new ResourceLocation("pneumaticcraft", "pressure_tube"));
+        helper.assertTrue(pressureTube != null && pressureTube != Blocks.AIR, "PNCR pressure tube must be registered");
+        helper.setBlock(pressureTubePos, pressureTube);
+        boundary.pneumaticAirHandler().addAir(2_000);
+
+        helper.succeedWhen(() -> {
+            BlockEntity pressureTubeEntity = helper.getBlockEntity(pressureTubePos);
+            helper.assertTrue(pressureTubeEntity != null, "PNCR pressure tube must create a block entity");
+            var air = pressureTubeEntity.getCapability(PNCCapabilities.AIR_HANDLER_MACHINE_CAPABILITY).orElseThrow(AssertionError::new);
+            helper.assertTrue(air.getAir() > 0, "Native PNCR dispersion must move compressed air into its pressure tube");
+            helper.assertTrue(boundary.pneumaticAirHandler().getAir() < 2_000, "Boundary must debit the same native air ledger");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 100)
+    public static void pneumaticChemicalTubesMoveCompleteMixturesWithoutSpeciesLoss(GameTestHelper helper) {
+        LatentMachineBlockEntity source = placeMachine(
+            helper, new BlockPos(1, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get()
+        );
+        LatentMachineBlockEntity target = placeMachine(
+            helper, new BlockPos(2, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get()
+        );
+        source.setTransportMode(PneumaticChemistryMode.CHEMICAL);
+        target.setTransportMode(PneumaticChemistryMode.CHEMICAL);
+        source.setStoredState(
+            new ChemicalState("chemlib:nitrogen", 96.0, 3.0, 293.15, 0.0, 0.0)
+                .merge(new ChemicalState("chemlib:oxygen", 32.0, 1.0, 293.15, 0.0, 0.0))
+        );
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(target.storedState().mass() > 0.0, "Adjacent chemical-mode tubes must exchange Latent matter");
+            helper.assertTrue(target.storedState().massOf("chemlib:nitrogen") > 0.0, "Transferred mixture must retain nitrogen");
+            helper.assertTrue(target.storedState().massOf("chemlib:oxygen") > 0.0, "Transferred mixture must retain oxygen");
+            helper.assertTrue(Math.abs(source.storedState().massOf("chemlib:nitrogen") + target.storedState().massOf("chemlib:nitrogen") - 96.0) < 1.0e-9,
+                "Chemical tube transfer must conserve nitrogen");
+            helper.assertTrue(Math.abs(source.storedState().massOf("chemlib:oxygen") + target.storedState().massOf("chemlib:oxygen") - 32.0) < 1.0e-9,
+                "Chemical tube transfer must conserve oxygen");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
+    public static void dryAirSeparatorConsumesFiniteNativeAirIntoCanonicalMixture(GameTestHelper helper) {
+        LatentMachineBlockEntity separator = placeMachine(
+            helper, new BlockPos(1, 1, 1), LatentChemlibMod.DRY_AIR_SEPARATOR.get()
+        );
+        int initialAir = 2_000;
+        separator.pneumaticAirHandler().addAir(initialAir);
+
+        helper.succeedWhen(() -> {
+            ChemicalState output = separator.storedState();
+            helper.assertTrue(output.mass() >= DryAirSeparation.OUTPUT_MASS, "Separator should emit at least one dry-air batch");
+            int consumedAir = initialAir - separator.pneumaticAirHandler().getAir();
+            helper.assertTrue(consumedAir >= DryAirSeparation.AIR_PER_BATCH, "Separator must consume native PNCR air");
+            helper.assertTrue(consumedAir % DryAirSeparation.AIR_PER_BATCH == 0, "Only complete finite air batches may be consumed");
+            helper.assertTrue(Math.abs(output.mass() - consumedAir * DryAirSeparation.OUTPUT_MASS / DryAirSeparation.AIR_PER_BATCH) < 1.0e-9,
+                "Every output batch must correspond to consumed native air");
+            helper.assertTrue(output.massOf("chemlib:nitrogen") > output.massOf("chemlib:oxygen"), "Canonical dry air must be nitrogen-dominant");
+            helper.assertTrue(output.massOf("chemlib:carbon_dioxide") > 0.0, "Canonical dry air must retain its carbon dioxide trace");
+            helper.assertTrue(separator.getCapability(LatentCapabilities.CHEMICAL_STATE).isPresent(), "Mixture output must use Latent's multi-species capability");
+        });
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
