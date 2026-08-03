@@ -10,6 +10,7 @@ import com.gerald.latentchemlib.data.ReactionRule;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.heatsync.api.HeatBlockEntity;
 import com.gerald.heatsync.api.HeatCapabilities;
+import com.gerald.heatsync.api.IHeatStorage;
 import com.smashingmods.chemlib.api.Element;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -24,13 +25,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public class NuclearSimulationService {
     public static final NuclearSimulationService INSTANCE = new NuclearSimulationService();
     private static final double INDUCED_CAPTURE_FLUX = 3_000.0;
-    private static final double INDUCED_FISSION_FLUX = 18_000.0;
 
     public enum NuclearEventType {
         DECAY,
@@ -45,8 +50,12 @@ public class NuclearSimulationService {
         BUDGET_EXHAUSTED
     }
 
-    public record NuclearEnvironment(double moderation, double absorption, double externalFlux) {
-        public static final NuclearEnvironment EMPTY = new NuclearEnvironment(0.0, 0.0, 0.0);
+    public record NuclearEnvironment(double moderation, double absorption, double externalFlux, double contactFraction) {
+        public static final NuclearEnvironment EMPTY = new NuclearEnvironment(0.0, 0.0, 0.0, 0.0);
+
+        public NuclearEnvironment(double moderation, double absorption, double externalFlux) {
+            this(moderation, absorption, externalFlux, 1.0);
+        }
     }
 
     public record NuclearStateEvent(
@@ -138,25 +147,33 @@ public class NuclearSimulationService {
         }
         if (outputSink != null && nuclearEvent.outputItem() != null && !nuclearEvent.outputItem().isEmpty()) outputSink.accept(nuclearEvent.outputItem().copy());
         emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        maybeMelt(level, pos, nuclearEvent.type(), nuclearEvent.heatEmission());
         return new StateProcessResult(ProcessStatus.MUTATED, nuclearEvent.outputState());
     }
 
     public Optional<NuclearStateEvent> evaluateState(ChemicalState state, double elapsedSeconds, NuclearEnvironment environment, RandomSource random) {
         if (!isNuclearRelevant(state)) return Optional.empty();
+        Optional<NuclearStateEvent> fission = fissionStateEvent(state, environment);
+        if (fission.isPresent()) return fission;
+        Optional<NuclearStateEvent> induced = inducedStateEvent(state, environment, random);
+        if (induced.isPresent()) return induced;
         for (NuclearDecayRule rule : LatentDataManager.INSTANCE.nuclearDecayRules()) {
             if (!rule.matches(state)) continue;
-            if (random.nextDouble() < rule.decayProbability(elapsedSeconds)) {
+            var decay = NuclearPhenomenaMath.continuousDecay(
+                state, rule, elapsedSeconds, LatentDataManager.INSTANCE.nuclearPhenomenaProfile()
+            );
+            if (decay.isPresent()) {
                 return Optional.of(new NuclearStateEvent(
-                    rule.apply(state),
+                    decay.get().output(),
                     null,
-                    rule.heatEmission(),
-                    radiationFromHeat(rule.heatEmission()),
+                    decay.get().heatEmission(),
+                    radiationFromHeat(decay.get().heatEmission()),
                     NuclearEventType.DECAY
                 ));
             }
             break;
         }
-        return inducedStateEvent(state, environment, random);
+        return Optional.empty();
     }
 
     public Optional<NuclearStackEvent> evaluateStack(ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, RandomSource random) {
@@ -212,23 +229,14 @@ public class NuclearSimulationService {
     public boolean isNuclearRelevant(ItemStack stack) {
         if (stack.isEmpty()) return false;
         if (stack.is(LatentChemlibMod.SEALED_CHEMICAL_CELL.get())) return ChemicalCellItem.hasState(stack) && isNuclearRelevant(ChemicalCellItem.state(stack));
-        if (stack.getItem() instanceof Element element) {
-            ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-            return id != null && (hasDecayRule(id.toString()) || element.getAtomicNumber() >= 82 || isConfiguredNuclearItem(id.toString()));
-        }
         ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        return id != null && isConfiguredNuclearItem(id.toString());
+        return id != null && isUnstableConfiguredChemical(id.toString());
     }
 
     public boolean isNuclearRelevant(ChemicalState state) {
         if (state.mass() <= 0.0) return false;
         for (String chemicalId : state.components().keySet()) {
-            if (hasDecayRule(chemicalId) || isConfiguredNuclearItem(chemicalId)) return true;
-        }
-        for (String chemicalId : state.components().keySet()) {
-            ResourceLocation id = ResourceLocation.tryParse(chemicalId);
-            Item item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
-            if (item instanceof Element element && element.getAtomicNumber() >= 82) return true;
+            if (isUnstableConfiguredChemical(chemicalId)) return true;
         }
         return false;
     }
@@ -248,13 +256,16 @@ public class NuclearSimulationService {
         if (stack.isEmpty() || !(stack.getItem() instanceof Element element)) return 0.0;
         ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
         if (id == null) return 0.0;
-        return neutronFlux(stackState(id.toString(), element, stack.getCount()), new NuclearEnvironment(environment.moderation(), environment.absorption(), 0.0));
+        return neutronFlux(stackState(id.toString(), element, stack.getCount()), new NuclearEnvironment(
+            environment.moderation(), environment.absorption(), 0.0, environment.contactFraction()
+        ));
     }
 
     public static NuclearEnvironment environment(ServerLevel level, BlockPos pos) {
         if (pos == null) return NuclearEnvironment.EMPTY;
         double moderation = 0.0;
         double absorption = 0.0;
+        int contacts = 0;
         for (Direction direction : Direction.values()) {
             BlockState state = level.getBlockState(pos.relative(direction));
             ResourceLocation id = ForgeRegistries.BLOCKS.getKey(state.getBlock());
@@ -265,8 +276,9 @@ public class NuclearSimulationService {
             if (key.contains("lead") || key.contains("boron") || key.contains("cadmium") || key.contains("absorber") || key.contains("concrete") || key.contains("obsidian")) {
                 absorption += 0.12;
             }
+            if (!state.isAir() && (!state.canBeReplaced() || !state.getFluidState().isEmpty())) contacts++;
         }
-        return new NuclearEnvironment(Math.min(4.0, moderation), Math.min(0.95, absorption), 0.0);
+        return new NuclearEnvironment(Math.min(4.0, moderation), Math.min(0.95, absorption), 0.0, contacts / 6.0);
     }
 
     private ProcessStatus processCellStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
@@ -289,6 +301,7 @@ public class NuclearSimulationService {
         stack.setTag(updated.getTag());
         if (outputSink != null && nuclearEvent.outputItem() != null && !nuclearEvent.outputItem().isEmpty()) outputSink.accept(nuclearEvent.outputItem().copy());
         emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        maybeMelt(level, pos, nuclearEvent.type(), nuclearEvent.heatEmission());
         return ProcessStatus.MUTATED;
     }
 
@@ -314,6 +327,18 @@ public class NuclearSimulationService {
         return Optional.of(new NuclearStateEvent(output, null, heat, radiationFromFlux(flux), type));
     }
 
+    private Optional<NuclearStateEvent> fissionStateEvent(ChemicalState state, NuclearEnvironment environment) {
+        double flux = neutronFlux(state, environment);
+        var phenomena = LatentDataManager.INSTANCE.nuclearPhenomenaProfile();
+        var fission = NuclearPhenomenaMath.fission(
+            state, flux, environment.moderation(), environment.contactFraction(), phenomena, this::isFissileComponent
+        );
+        return fission.map(result -> new NuclearStateEvent(
+            result.output(), null,
+            result.heatEmission(), phenomena.fissionRadiationLevel(), NuclearEventType.FISSION
+        ));
+    }
+
     private Optional<NuclearStackEvent> inducedStackEvent(ChemicalState state, NuclearEnvironment environment, RandomSource random) {
         double flux = neutronFlux(state, environment);
         InducedProduct product = inducedProduct(state.chemicalId(), flux);
@@ -331,28 +356,8 @@ public class NuclearSimulationService {
     }
 
     private static InducedProduct inducedProduct(String chemicalId, double flux) {
-        if (flux >= INDUCED_FISSION_FLUX) {
-            String fissionProduct = switch (chemicalId) {
-                case "chemlib:uranium" -> "chemlib:barium";
-                case "chemlib:thorium" -> "chemlib:radium";
-                case "chemlib:plutonium" -> "chemlib:krypton";
-                default -> "";
-            };
-            if (!fissionProduct.isBlank()) {
-                return new InducedProduct(NuclearEventType.FISSION, fissionProduct, item(fissionProduct), 3_200.0f);
-            }
-        }
         Optional<ReactionRule> captureRule = captureRule(chemicalId);
-        if (captureRule.isEmpty()) {
-            String legacyCaptureProduct = switch (chemicalId) {
-                case "chemlib:uranium" -> "chemlib:neptunium";
-                case "chemlib:thorium" -> "chemlib:protactinium";
-                case "chemlib:plutonium" -> "chemlib:americium";
-                default -> "";
-            };
-            if (legacyCaptureProduct.isBlank()) return InducedProduct.EMPTY;
-            return new InducedProduct(NuclearEventType.CAPTURE, legacyCaptureProduct, item(legacyCaptureProduct), 900.0f);
-        }
+        if (captureRule.isEmpty()) return InducedProduct.EMPTY;
         ReactionRule rule = captureRule.get();
         Item captureItem = rule.outputItemValue();
         if (isMissing(captureItem)) captureItem = item(rule.outputChemical());
@@ -360,7 +365,7 @@ public class NuclearSimulationService {
     }
 
     private static double inducedProbability(double flux, NuclearEventType type) {
-        double threshold = type == NuclearEventType.FISSION ? INDUCED_FISSION_FLUX : INDUCED_CAPTURE_FLUX;
+        double threshold = INDUCED_CAPTURE_FLUX;
         if (flux < threshold) return 0.0;
         return Math.min(1.0, (flux - threshold) / threshold);
     }
@@ -374,12 +379,26 @@ public class NuclearSimulationService {
     }
 
     private void emit(ServerLevel level, BlockPos pos, HeatBlockEntity heatSink, float heatEmission, int radiationLevel) {
-        if (heatSink != null && heatEmission > 0.0f && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1)) {
-            heatSink.addHeat(heatEmission);
+        if (heatEmission > 0.0f && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1)) {
+            distributeHeat(level, pos, heatSink, heatEmission);
         }
         if (pos != null && radiationLevel > 0 && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_RADIATION_EMISSIONS, 1)) {
             LatentRadiationService.emit(level, pos, radiationLevel);
         }
+    }
+
+    void emitAmbientHeat(ServerLevel level, BlockPos pos, float heatEmission) {
+        if (heatEmission > 0.0f && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1)) {
+            distributeHeat(level, pos, null, heatEmission);
+        }
+    }
+
+    private void maybeMelt(ServerLevel level, BlockPos pos, NuclearEventType type, float heatEmission) {
+        if (pos == null || type != NuclearEventType.FISSION
+            || heatEmission < LatentDataManager.INSTANCE.nuclearPhenomenaProfile().surroundingMeltHeatThreshold()
+            || !SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) return;
+        int cursor = Math.floorMod((int) (level.getGameTime() ^ pos.asLong()), Direction.values().length);
+        ThermalMelting.meltNext(level, pos, cursor);
     }
 
     private static boolean hasDecayRule(String chemicalId) {
@@ -387,6 +406,24 @@ public class NuclearSimulationService {
             if (rule.inputChemical().equals(chemicalId)) return true;
         }
         return false;
+    }
+
+    private static boolean isUnstableConfiguredChemical(String chemicalId) {
+        if (hasDecayRule(chemicalId)) return true;
+        return LatentDataManager.INSTANCE.isotopeCatalog().knownFor(chemicalId).stream()
+            .anyMatch(isotope -> !isotope.stable() && isotope.halfLifeSeconds() > 0.0);
+    }
+
+    private boolean isFissileComponent(String chemicalId) {
+        ResourceLocation id = ResourceLocation.tryParse(chemicalId);
+        Item item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
+        if (!(item instanceof Element element)) return false;
+        var profile = LatentDataManager.INSTANCE.nuclearPhenomenaProfile();
+        double atomicNumber = element.getAtomicNumber();
+        return LatentDataManager.INSTANCE.isotopeCatalog().knownFor(chemicalId).stream()
+            .filter(isotope -> !isotope.stable() && isotope.halfLifeSeconds() > 0.0)
+            .filter(isotope -> isotope.massNumber() >= profile.fissionMinimumIsotopeMassNumber())
+            .anyMatch(isotope -> atomicNumber * atomicNumber / isotope.massNumber() >= profile.fissionMinimumFissilityIndex());
     }
 
     private static ChemicalTraits traits(String chemicalId) {
@@ -397,8 +434,24 @@ public class NuclearSimulationService {
         }
     }
 
-    private static boolean isConfiguredNuclearItem(String itemId) {
-        return itemId.contains("uranium") || itemId.contains("thorium") || itemId.contains("plutonium") || itemId.contains("radioactive") || itemId.contains("nuclear") || itemId.contains("fissile");
+    private static void distributeHeat(ServerLevel level, BlockPos pos, HeatBlockEntity direct, float heatEmission) {
+        List<IHeatStorage> targets = new ArrayList<>();
+        Set<IHeatStorage> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        if (direct != null && seen.add(direct)) targets.add(direct);
+        if (pos != null) {
+            for (Direction direction : Direction.values()) {
+                BlockEntity adjacent = level.getBlockEntity(pos.relative(direction));
+                if (adjacent == null) continue;
+                adjacent.getCapability(HeatCapabilities.INSTANCE.getHEAT(), direction.getOpposite()).ifPresent(storage -> {
+                    if (seen.add(storage)) targets.add(storage);
+                });
+            }
+        }
+        float remaining = heatEmission;
+        for (int index = 0; index < targets.size() && remaining > 0.0f; index++) {
+            float fairShare = remaining / (targets.size() - index);
+            remaining -= targets.get(index).addHeat(fairShare, false);
+        }
     }
 
     private static Item item(String itemId) {

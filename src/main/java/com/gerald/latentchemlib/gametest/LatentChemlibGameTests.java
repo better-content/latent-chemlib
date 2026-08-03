@@ -13,6 +13,8 @@ import com.gerald.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.gerald.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.GasFluidCodec;
+import com.gerald.latentchemlib.sim.NuclearPhenomenaMath;
+import com.gerald.latentchemlib.data.LatentDataManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.gametest.framework.GameTest;
@@ -22,7 +24,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import me.desht.pneumaticcraft.api.PNCCapabilities;
 import net.minecraftforge.fluids.FluidStack;
@@ -490,6 +494,90 @@ public final class LatentChemlibGameTests {
         helper.runAfterDelay(21, () -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Loose gas must leave block inventories within 20 ticks");
             helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0.0, "Escaped inventory gas must become a cloud");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 100)
+    public static void ordinaryContainedStateBecomesCriticalOnlyWithLocalConditions(GameTestHelper helper) {
+        BlockPos tankPos = new BlockPos(3, 1, 1);
+        LatentMachineBlockEntity tank = placeMachine(helper, tankPos, LatentChemlibMod.GAS_TANK.get());
+        tank.setStoredState(new ChemicalState("chemlib:californium", 1_000.0, 8.0, 900.0, 0.0, 0.0));
+        helper.setBlock(tankPos.west(), Blocks.WATER);
+        helper.setBlock(tankPos.east(), Blocks.STONE);
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(tank.storedState().massOf("chemlib:barium") > 0.0, "Critical material must retain its heavy daughter");
+            helper.assertTrue(tank.storedState().massOf("chemlib:krypton") > 0.0, "Critical material must retain its light daughter");
+            helper.assertTrue(tank.getHeat() > 0.0f, "Ordinary containment must receive HeatSync heat from fission");
+            helper.assertBlockPresent(Blocks.LAVA, tankPos.east());
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 100)
+    public static void configuredHeavyUnstableStateContinuouslyHeatsAdjacentMaterial(GameTestHelper helper) {
+        BlockPos sourcePos = new BlockPos(2, 1, 1);
+        LatentMachineBlockEntity source = placeMachine(helper, sourcePos, LatentChemlibMod.GAS_TANK.get());
+        LatentMachineBlockEntity adjacent = placeMachine(helper, sourcePos.east(), LatentChemlibMod.GAS_TANK.get());
+        source.setStoredState(new ChemicalState("chemlib:bismuth", 1_000.0, 8.0, 600.0, 0.0, 0.0));
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(source.storedState().massOf("chemlib:thallium") > 0.0,
+                "Loaded Bi-209 decay evidence must drive deterministic daughter formation");
+            helper.assertTrue(source.getHeat() > 0.0f, "The containing material must receive conserved decay heat");
+            helper.assertTrue(adjacent.getHeat() > 0.0f, "Touching HeatSync material must receive a non-duplicated share of decay heat");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 100)
+    public static void opposingHotDenseGasCloudsFuseAtCollisionCell(GameTestHelper helper) {
+        BlockPos collisionPos = new BlockPos(3, 1, 1);
+        ChemicalCloudBlockEntity collision = placeCloud(helper, collisionPos);
+        ChemicalCloudBlockEntity west = placeCloud(helper, collisionPos.west());
+        ChemicalCloudBlockEntity east = placeCloud(helper, collisionPos.east());
+        collision.seed(new ChemicalState("chemlib:argon", 100.0, 10.0, 9_000.0, 0.0, 100_000.0));
+        west.seed(new ChemicalState("chemlib:hydrogen", 100.0, 12.0, 9_000.0, 2.0, 100_000.0));
+        east.seed(new ChemicalState("chemlib:hydrogen", 100.0, 12.0, 9_000.0, 2.0, 100_000.0));
+        helper.setBlock(collisionPos.above(), Blocks.STONE);
+        helper.assertTrue(NuclearPhenomenaMath.fusion(
+            west.chemicalState(), east.chemicalState(),
+            LatentDataManager.INSTANCE.traits("chemlib:hydrogen"), true,
+            LatentDataManager.INSTANCE.nuclearPhenomenaProfile()
+        ).isPresent(), "Configured live stream states must cross the fusion barrier");
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(collision.chemicalState().massOf("chemlib:helium") > 0.0,
+                "Opposing compatible streams must create helium in the collision cell");
+            helper.assertTrue(Math.abs(west.chemicalState().mass() - 96.0) < 1.0e-6
+                    && Math.abs(east.chemicalState().mass() - 96.0) < 1.0e-6,
+                "One collision must debit exactly one configured batch from both streams");
+            helper.assertBlockPresent(Blocks.LAVA, collisionPos.above());
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 80)
+    public static void configuredRadioactiveChemLibStackSurvivesAndAdvectsInLava(GameTestHelper helper) {
+        ItemStack bismuth = new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("chemlib", "bismuth")));
+        helper.assertTrue(!bismuth.isEmpty(), "Configured radioactive ChemLib bismuth must be registered");
+        BlockPos lavaPos = new BlockPos(2, 2, 2);
+        helper.setBlock(lavaPos.below(), Blocks.STONE);
+        helper.setBlock(lavaPos.east().below(), Blocks.STONE);
+        helper.setBlock(lavaPos.east(2), Blocks.STONE);
+        helper.setBlock(lavaPos, Blocks.LAVA);
+        helper.setBlock(lavaPos.east(), Fluids.LAVA.getFlowing(7, false).createLegacyBlock());
+        var initialFlow = helper.getLevel().getFluidState(helper.absolutePos(lavaPos))
+            .getFlow(helper.getLevel(), helper.absolutePos(lavaPos));
+        helper.assertTrue(initialFlow.horizontalDistance() > 0.01, "The live lava test must create a real horizontal flow field");
+        ItemEntity item = helper.spawnItem(bismuth.getItem(), lavaPos);
+        item.setNoGravity(true);
+        double startX = item.getX();
+        double startZ = item.getZ();
+
+        helper.runAfterDelay(30, () -> {
+            helper.assertTrue(item.isAlive(), "Loaded isotope evidence must keep radioactive matter alive in actual lava");
+            double horizontalTravel = Math.hypot(item.getX() - startX, item.getZ() - startZ);
+            helper.assertTrue(horizontalTravel > 0.01 || item.getDeltaMovement().horizontalDistance() > 0.01,
+                "The active dropped-item scanner must advect radioactive matter with lava flow");
             helper.succeed();
         });
     }

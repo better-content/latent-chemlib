@@ -1,0 +1,41 @@
+{
+  "source_note": "Standalone baseline; higher-priority pack data supplies the complete unstable-isotope catalog.",
+  "rules": [
+    {
+      "id": "latent_chemlib:nuclear_decay/californium_to_curium",
+      "input_chemical": "chemlib:californium",
+      "output_chemical": "chemlib:curium",
+      "isotope": "Cf-251",
+      "half_life_seconds": 28339660800.0,
+      "output_mass_ratio": 0.984063745,
+      "temperature_delta": 1880.0,
+      "charge_delta": 0.19,
+      "energy_delta": 7000.0,
+      "heat_emission": 4768.5
+    },
+    {
+      "id": "latent_chemlib:nuclear_decay/uranium_to_thorium",
+      "input_chemical": "chemlib:uranium",
+      "output_chemical": "chemlib:thorium",
+      "isotope": "U-238",
+      "half_life_seconds": 141014428800000000.0,
+      "output_mass_ratio": 0.9831932773,
+      "temperature_delta": 1110.0,
+      "charge_delta": 0.09,
+      "energy_delta": 3000.0,
+      "heat_emission": 3022.5
+    },
+    {
+      "id": "latent_chemlib:nuclear_decay/bismuth_to_thallium",
+      "input_chemical": "chemlib:bismuth",
+      "output_chemical": "chemlib:thallium",
+      "isotope": "Bi-209",
+      "half_life_seconds": 6.344e26,
+      "output_mass_ratio": 0.980861244,
+      "temperature_delta": 80.0,
+      "charge_delta": 0.0,
+      "energy_delta": 40.0,
+      "heat_emission": 120.0
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.TickEvent;
@@ -115,6 +116,7 @@ public class NuclearSurfaceScanner {
                 return ActiveHolderSet.Decision.REMOVE;
             }
             if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            advectInLava(level, item);
             ItemStack stack = item.getItem();
             NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
                 level, item.blockPosition(), stack, 1.0, null,
@@ -130,6 +132,14 @@ public class NuclearSurfaceScanner {
                 ? ActiveHolderSet.Decision.STOP
                 : ActiveHolderSet.Decision.KEEP;
         });
+    }
+
+    private static void advectInLava(ServerLevel level, ItemEntity item) {
+        BlockPos pos = item.blockPosition();
+        var fluid = level.getFluidState(pos);
+        if (!fluid.is(FluidTags.LAVA)) return;
+        item.setDeltaMovement(LavaAdvectionMath.advect(item.getDeltaMovement(), fluid.getFlow(level, pos)));
+        item.hurtMarked = true;
     }
 
     private void scanBlockInventories(ServerLevel level) {
@@ -253,12 +263,16 @@ public class NuclearSurfaceScanner {
 
     private static NuclearSimulationService.NuclearEnvironment inventoryEnvironment(Inventory inventory, int slot, NuclearSimulationService.NuclearEnvironment baseEnvironment) {
         double externalFlux = adjacentFlux(baseEnvironment, index -> inventory.getItem(index), inventory.getContainerSize(), slot);
-        return new NuclearSimulationService.NuclearEnvironment(baseEnvironment.moderation(), baseEnvironment.absorption(), externalFlux);
+        return new NuclearSimulationService.NuclearEnvironment(
+            baseEnvironment.moderation(), baseEnvironment.absorption(), externalFlux, baseEnvironment.contactFraction()
+        );
     }
 
     private static NuclearSimulationService.NuclearEnvironment inventoryEnvironment(IItemHandler handler, int slot, NuclearSimulationService.NuclearEnvironment baseEnvironment) {
         double externalFlux = adjacentFlux(baseEnvironment, handler::getStackInSlot, handler.getSlots(), slot);
-        return new NuclearSimulationService.NuclearEnvironment(baseEnvironment.moderation(), baseEnvironment.absorption(), externalFlux);
+        return new NuclearSimulationService.NuclearEnvironment(
+            baseEnvironment.moderation(), baseEnvironment.absorption(), externalFlux, baseEnvironment.contactFraction()
+        );
     }
 
     private static double adjacentFlux(NuclearSimulationService.NuclearEnvironment baseEnvironment, java.util.function.IntFunction<ItemStack> stackGetter, int size, int slot) {

@@ -6,6 +6,7 @@ import com.gerald.latentchemlib.data.ChemicalTraits;
 import com.gerald.latentchemlib.data.LatentDataManager;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.EmergentMath;
+import com.gerald.latentchemlib.sim.EmergentFusionService;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
 import com.gerald.latentchemlib.sim.SimulationBudget;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
@@ -92,6 +93,8 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
         int cadence = EmergentMath.updateCadence(entity.state);
         if (cadence <= 0 || serverLevel.getGameTime() % cadence != 0L) return;
         if (!SimulationScheduler.INSTANCE.trySpend(serverLevel, SimulationBudget.CLOUD_UPDATES, 1)) return;
+
+        if (EmergentFusionService.INSTANCE.tryFuseAt(serverLevel, pos, entity)) return;
 
         NuclearSimulationService.StateProcessResult nuclear = NuclearSimulationService.INSTANCE.processChemicalState(
             serverLevel,

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NuclearSimulationServiceTest {
@@ -25,25 +24,20 @@ class NuclearSimulationServiceTest {
     }
 
     @Test
-    void highFluxUraniumCanInduceOneFissionEvent() {
-        ChemicalState uranium = new ChemicalState("chemlib:uranium", 1_000.0, 1.0, 293.0, 0.0, 0.0);
-        NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(0.0, 0.0, 40_000.0);
+    void highFluxConfiguredHeavyFuelCanInduceOneFissionEvent() {
+        ChemicalState californium = new ChemicalState("chemlib:californium", 1_000.0, 8.0, 900.0, 0.0, 0.0);
 
-        Optional<NuclearSimulationService.NuclearStateEvent> event = NuclearSimulationService.INSTANCE.evaluateState(
-            uranium,
-            1.0,
-            flux,
-            RandomSource.create(42L)
-        );
+        var event = NuclearPhenomenaMath.fission(
+            californium, 40_000.0, 0.35, 0.5,
+            com.gerald.latentchemlib.data.NuclearPhenomenaProfile.defaults(), id -> id.equals("chemlib:californium")
+        ).orElseThrow();
 
-        assertTrue(event.isPresent());
-        assertEquals(NuclearSimulationService.NuclearEventType.FISSION, event.get().type());
-        assertEquals("chemlib:barium", event.get().outputState().chemicalId());
-        assertNull(event.get().outputItem(), "state transformations must not duplicate daughter matter as an item");
+        assertTrue(event.output().massOf("chemlib:barium") > 0.0);
+        assertTrue(event.output().massOf("chemlib:krypton") > 0.0);
     }
 
     @Test
-    void captureFluxUraniumProducesNeptuniumWithoutFissionMassLoss() {
+    void unloadedUnitContextDoesNotInferCaptureFromElementNames() {
         ChemicalState uranium = new ChemicalState("chemlib:uranium", 1_000.0, 1.0, 293.0, 0.0, 0.0);
         NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(0.0, 0.0, 6_000.0);
 
@@ -54,10 +48,7 @@ class NuclearSimulationServiceTest {
             RandomSource.create(7L)
         );
 
-        assertTrue(event.isPresent());
-        assertEquals(NuclearSimulationService.NuclearEventType.CAPTURE, event.get().type());
-        assertEquals("chemlib:neptunium", event.get().outputState().chemicalId());
-        assertEquals(995.0, event.get().outputState().mass());
+        assertTrue(event.isEmpty());
     }
 
     @Test
@@ -69,16 +60,19 @@ class NuclearSimulationServiceTest {
 
     @Test
     void inducedFissionPreservesNonReactingMixtureComponents() {
-        ChemicalState mixture = new ChemicalState("chemlib:uranium", 1_000.0, 1.0, 293.0, 0.0, 0.0)
+        ChemicalState mixture = new ChemicalState("chemlib:uranium", 1_000.0, 8.0, 900.0, 0.0, 0.0)
             .merge(new ChemicalState("chemlib:argon", 125.0, 0.5, 293.0, 0.0, 0.0));
-        NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(0.0, 0.0, 40_000.0);
+        NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(0.35, 0.0, 40_000.0, 0.5);
 
-        var event = NuclearSimulationService.INSTANCE.evaluateState(mixture, 1.0, flux, RandomSource.create(42L));
+        var event = NuclearPhenomenaMath.fission(
+            mixture, 40_000.0, flux.moderation(), flux.contactFraction(),
+            com.gerald.latentchemlib.data.NuclearPhenomenaProfile.defaults(), id -> id.equals("chemlib:uranium")
+        ).orElseThrow();
 
-        assertTrue(event.isPresent());
-        assertEquals(520.0, event.get().outputState().massOf("chemlib:barium"));
-        assertEquals(125.0, event.get().outputState().massOf("chemlib:argon"));
-        assertEquals(645.0, event.get().outputState().mass());
+        assertTrue(event.output().massOf("chemlib:barium") > 0.0);
+        assertTrue(event.output().massOf("chemlib:krypton") > 0.0);
+        assertEquals(125.0, event.output().massOf("chemlib:argon"));
+        assertEquals(mixture.mass(), event.output().mass() + 0.016, 1.0e-9);
     }
 
     @Test
