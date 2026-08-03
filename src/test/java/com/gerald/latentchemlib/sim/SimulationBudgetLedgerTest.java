@@ -6,8 +6,25 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SimulationBudgetLedgerTest {
+    @Test
+    void multiBudgetReservationIsAtomic() {
+        SimulationBudgetLedger<String> ledger = new SimulationBudgetLedger<>();
+        SchedulerProfile profile = SchedulerProfile.defaults();
+        assertTrue(ledger.trySpendAll("level", java.util.Map.of(
+            SimulationBudget.NUCLEAR_MUTATIONS, profile.nuclearMutationsPerSecond(),
+            SimulationBudget.NUCLEAR_HEAT_EMISSIONS, profile.nuclearHeatEmissionsPerSecond()
+        ), profile));
+        assertFalse(ledger.trySpendAll("level", java.util.Map.of(
+            SimulationBudget.NUCLEAR_MUTATIONS, 1,
+            SimulationBudget.NUCLEAR_RADIATION_EMISSIONS, 1
+        ), profile));
+        assertEquals(0, ledger.spent("level", SimulationBudget.NUCLEAR_RADIATION_EMISSIONS));
+    }
+
     private final SchedulerProfile profile = new SchedulerProfile(2, 3, 4, 5, 6, 7, 8, 9, 10);
 
     @Test

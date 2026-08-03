@@ -19,6 +19,20 @@ public class SimulationBudgetLedger<K> {
         return true;
     }
 
+    /** Atomically reserves a whole transaction or leaves every budget unchanged. */
+    public boolean trySpendAll(K key, Map<SimulationBudget, Integer> amounts, SchedulerProfile profile) {
+        EnumMap<SimulationBudget, Integer> spent = spentByKey.computeIfAbsent(key, ignored -> new EnumMap<>(SimulationBudget.class));
+        for (var entry : amounts.entrySet()) {
+            int amount = Math.max(0, entry.getValue());
+            if (spent.getOrDefault(entry.getKey(), 0) + amount > limit(entry.getKey(), profile)) return false;
+        }
+        for (var entry : amounts.entrySet()) {
+            int amount = Math.max(0, entry.getValue());
+            if (amount > 0) spent.merge(entry.getKey(), amount, Integer::sum);
+        }
+        return true;
+    }
+
     public int spent(K key, SimulationBudget budget) {
         EnumMap<SimulationBudget, Integer> spent = spentByKey.get(key);
         return spent == null ? 0 : spent.getOrDefault(budget, 0);

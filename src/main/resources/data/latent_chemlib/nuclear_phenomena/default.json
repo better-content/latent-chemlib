@@ -23,6 +23,8 @@
   "fusion_mass_defect_fraction": 0.007,
   "fusion_heat_emission": 24000.0,
   "fusion_radiation_level": 8,
+  "decay_minimum_isotope_mass_number": 209,
+  "decay_minimum_specific_heat_per_second": 4.0,
   "decay_reference_mass": 256.0,
   "decay_half_life_log_scale": 1.0,
   "surrounding_melt_heat_threshold": 10000.0

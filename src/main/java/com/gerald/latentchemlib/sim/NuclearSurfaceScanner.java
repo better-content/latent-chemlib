@@ -109,9 +109,15 @@ public class NuclearSurfaceScanner {
         }
     }
 
+    /** Deterministic entry point used by live-server probes without requiring a network connection. */
+    public void scanPlayerNow(ServerLevel level, ServerPlayer player) {
+        scanPlayerInventory(level, player);
+    }
+
     private void scanDroppedItems(ServerLevel level) {
         ActiveHolderSet<UUID> active = droppedItems(level);
-        active.visit(Integer.MAX_VALUE, uuid -> {
+        int holdersAtStart = active.size();
+        active.visit(holdersAtStart, uuid -> {
             if (!(level.getEntity(uuid) instanceof ItemEntity item) || !item.isAlive() || !isRelevant(item.getItem())) {
                 return ActiveHolderSet.Decision.REMOVE;
             }
@@ -144,7 +150,8 @@ public class NuclearSurfaceScanner {
 
     private void scanBlockInventories(ServerLevel level) {
         ActiveHolderSet<BlockPos> active = blockInventories(level);
-        active.visit(Integer.MAX_VALUE, pos -> {
+        int holdersAtStart = active.size();
+        active.visit(holdersAtStart, pos -> {
             BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
             if (blockEntity == null) {
                 return ActiveHolderSet.Decision.REMOVE;
@@ -205,31 +212,11 @@ public class NuclearSurfaceScanner {
     }
 
     private NuclearSimulationService.ProcessStatus processPlayerStack(ServerLevel level, ServerPlayer player, Inventory inventory, int slot, ItemStack stack, NuclearSimulationService.NuclearEnvironment environment) {
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STACK_EVALUATIONS, 1)) {
-            return NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED;
-        }
-        Optional<NuclearSimulationService.NuclearStackEvent> event = NuclearSimulationService.INSTANCE.evaluateStack(
-            stack,
-            PLAYER_PERIOD_TICKS / 20.0,
-            environment,
-            level.getRandom()
-        );
-        if (event.isEmpty()) {
-            inventory.setItem(slot, stack);
-            inventory.setChanged();
-            return NuclearSimulationService.ProcessStatus.UNCHANGED;
-        }
-        NuclearSimulationService.NuclearStackEvent nuclearEvent = event.get();
-        if (nuclearEvent.type() == NuclearSimulationService.NuclearEventType.CAPTURE && !canPlaceAdjacent(inventory, slot, outputStack(nuclearEvent))) {
-            return NuclearSimulationService.ProcessStatus.UNCHANGED;
-        }
-        NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.applyStackEvent(
-            level,
-            player.blockPosition(),
-            stack,
-            nuclearEvent,
-            null,
-            output -> placePlayerOutput(player, inventory, slot, nuclearEvent.type(), output)
+        NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
+            level, player.blockPosition(), stack, PLAYER_PERIOD_TICKS / 20.0, environment, null,
+            event -> event.type() != NuclearSimulationService.NuclearEventType.CAPTURE
+                || canPlaceAdjacent(inventory, slot, outputStack(event)),
+            (type, output) -> placePlayerOutput(player, inventory, slot, type, output)
         );
         inventory.setItem(slot, stack);
         inventory.setChanged();
@@ -237,27 +224,11 @@ public class NuclearSurfaceScanner {
     }
 
     private NuclearSimulationService.ProcessStatus processHandlerStack(ServerLevel level, BlockEntity blockEntity, IItemHandlerModifiable handler, int slot, ItemStack working, NuclearSimulationService.NuclearEnvironment environment) {
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STACK_EVALUATIONS, 1)) {
-            return NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED;
-        }
-        Optional<NuclearSimulationService.NuclearStackEvent> event = NuclearSimulationService.INSTANCE.evaluateStack(
-            working,
-            1.0,
-            environment,
-            level.getRandom()
-        );
-        if (event.isEmpty()) return NuclearSimulationService.ProcessStatus.UNCHANGED;
-        NuclearSimulationService.NuclearStackEvent nuclearEvent = event.get();
-        if (nuclearEvent.type() == NuclearSimulationService.NuclearEventType.CAPTURE && !canPlaceAdjacent(handler, slot, outputStack(nuclearEvent))) {
-            return NuclearSimulationService.ProcessStatus.UNCHANGED;
-        }
-        return NuclearSimulationService.INSTANCE.applyStackEvent(
-            level,
-            blockEntity.getBlockPos(),
-            working,
-            nuclearEvent,
-            NuclearSimulationService.heatSink(blockEntity),
-            output -> placeHandlerOutput(level, blockEntity.getBlockPos(), handler, slot, nuclearEvent.type(), output)
+        return NuclearSimulationService.INSTANCE.processStack(
+            level, blockEntity.getBlockPos(), working, 1.0, environment, NuclearSimulationService.heatSink(blockEntity),
+            event -> event.type() != NuclearSimulationService.NuclearEventType.CAPTURE
+                || canPlaceAdjacent(handler, slot, outputStack(event)),
+            (type, output) -> placeHandlerOutput(level, blockEntity.getBlockPos(), handler, slot, type, output)
         );
     }
 

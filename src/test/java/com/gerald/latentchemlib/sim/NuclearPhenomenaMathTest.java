@@ -67,6 +67,7 @@ class NuclearPhenomenaMathTest {
 
         assertTrue(result.daughterMass() > 0.0);
         assertTrue(result.heatEmission() > 0.0f);
+        assertEquals(4_000.0, result.heatEmission(), 1.0e-3, "Configured minimum specific power must be gameplay-significant");
         assertEquals(input.mass(), result.output().mass() + result.massDefect(), EPSILON);
         assertEquals(result.consumedMass(), result.daughterMass() + result.massDefect(), EPSILON);
         assertEquals(result.massDefect() * 1_000_000.0, result.heatEmission(), 1.0e-3);

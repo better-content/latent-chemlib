@@ -76,6 +76,7 @@ public final class NuclearPhenomenaMath {
         double instability = 1.0 / (1.0 + logHalfLife / profile.decayHalfLifeLogScale());
         double requestedHeat = rule.heatEmission()
             * (available / profile.decayReferenceMass()) * instability * elapsedSeconds;
+        requestedHeat = Math.max(requestedHeat, available * profile.decayMinimumSpecificHeatPerSecond() * elapsedSeconds);
         double maximumHeat = available * defectFraction * MASS_ENERGY_UNITS;
         double heat = Math.min(requestedHeat, maximumHeat);
         double defect = heat / MASS_ENERGY_UNITS;

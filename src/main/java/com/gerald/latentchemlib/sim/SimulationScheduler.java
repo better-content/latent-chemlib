@@ -6,6 +6,8 @@ import net.minecraft.world.level.Level;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
+import java.util.Map;
+
 public class SimulationScheduler {
     public static final SimulationScheduler INSTANCE = new SimulationScheduler();
 
@@ -20,5 +22,9 @@ public class SimulationScheduler {
 
     public boolean trySpend(Level level, SimulationBudget budget, int amount) {
         return ledger.trySpend(level.dimension(), budget, amount, LatentDataManager.INSTANCE.schedulerProfile());
+    }
+
+    public boolean trySpendAll(Level level, Map<SimulationBudget, Integer> amounts) {
+        return ledger.trySpendAll(level.dimension(), amounts, LatentDataManager.INSTANCE.schedulerProfile());
     }
 }

@@ -31,7 +31,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.EnumMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 public class NuclearSimulationService {
     public static final NuclearSimulationService INSTANCE = new NuclearSimulationService();
@@ -91,36 +94,56 @@ public class NuclearSimulationService {
     }
 
     public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+        return processStack(level, pos, stack, elapsedSeconds, environment, heatSink, ignored -> true,
+            (ignored, output) -> { if (outputSink != null) outputSink.accept(output); });
+    }
+
+    public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds,
+        NuclearEnvironment environment, HeatBlockEntity heatSink, Predicate<NuclearStackEvent> eventAcceptance,
+        BiConsumer<NuclearEventType, ItemStack> outputSink) {
         if (!canProcessStack(stack, environment)) return ProcessStatus.SKIPPED;
         if (stack.is(LatentChemlibMod.SEALED_CHEMICAL_CELL.get())) {
             return processCellStack(level, pos, stack, elapsedSeconds, environment, heatSink, outputSink);
         }
+        Optional<RadioactiveFormResolver.ResolvedForm> form = RadioactiveFormResolver.INSTANCE.resolve(stack);
+        if (form.isPresent()) return processMaterialStack(level, pos, stack, form.get(), elapsedSeconds, environment, heatSink);
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STACK_EVALUATIONS, 1)) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
-        Optional<NuclearStackEvent> event = evaluateStack(stack, elapsedSeconds, environment, level.getRandom());
-        if (event.isEmpty()) return ProcessStatus.UNCHANGED;
-        NuclearStackEvent nuclearEvent = event.get();
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
-            return ProcessStatus.BUDGET_EXHAUSTED;
+        long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
+        LoadedExposureClock.Window exposure = LoadedExposureClock.preview(stack.getTag(), elapsedTicks, level.getRandom().nextLong());
+        Optional<NuclearStackEvent> event = evaluateStack(stack, environment, exposure);
+        if (event.isEmpty()) {
+            LoadedExposureClock.commit(stack.getOrCreateTag(), exposure);
+            return ProcessStatus.UNCHANGED;
         }
-        int consumed = Math.min(stack.getCount(), Math.max(1, nuclearEvent.inputCount()));
-        stack.shrink(consumed);
-        ItemStack output = new ItemStack(nuclearEvent.outputItem(), nuclearEvent.outputCount());
-        if (outputSink != null && !output.isEmpty()) outputSink.accept(output);
-        emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
-        return ProcessStatus.MUTATED;
+        if (!eventAcceptance.test(event.get())) {
+            LoadedExposureClock.commit(stack.getOrCreateTag(), exposure);
+            return ProcessStatus.UNCHANGED;
+        }
+        ProcessStatus status = applyStackEvent(level, pos, stack, event.get(), heatSink, outputSink);
+        if (status != ProcessStatus.BUDGET_EXHAUSTED && !stack.isEmpty()) {
+            LoadedExposureClock.commit(stack.getOrCreateTag(), exposure);
+        }
+        return status;
     }
 
     public ProcessStatus applyStackEvent(ServerLevel level, BlockPos pos, ItemStack stack, NuclearStackEvent nuclearEvent, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
+        return applyStackEvent(level, pos, stack, nuclearEvent, heatSink,
+            (ignored, output) -> { if (outputSink != null) outputSink.accept(output); });
+    }
+
+    public ProcessStatus applyStackEvent(ServerLevel level, BlockPos pos, ItemStack stack, NuclearStackEvent nuclearEvent,
+        HeatBlockEntity heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
+        if (!reserveConsequences(level, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel())) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
         int consumed = Math.min(stack.getCount(), Math.max(1, nuclearEvent.inputCount()));
         stack.shrink(consumed);
         ItemStack output = new ItemStack(nuclearEvent.outputItem(), nuclearEvent.outputCount());
-        if (outputSink != null && !output.isEmpty()) outputSink.accept(output);
-        emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        if (outputSink != null && !output.isEmpty()) outputSink.accept(nuclearEvent.type(), output);
+        float retained = emitReserved(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        if (retained > 0.0f && !stack.isEmpty()) stack.getOrCreateTag().putFloat("latent_chemlib_retained_decay_heat", retained);
         return ProcessStatus.MUTATED;
     }
 
@@ -142,13 +165,13 @@ public class NuclearSimulationService {
         );
         if (event.isEmpty()) return new StateProcessResult(ProcessStatus.UNCHANGED, state);
         NuclearStateEvent nuclearEvent = event.get();
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
+        if (!reserveConsequences(level, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel())) {
             return new StateProcessResult(ProcessStatus.BUDGET_EXHAUSTED, state);
         }
         if (outputSink != null && nuclearEvent.outputItem() != null && !nuclearEvent.outputItem().isEmpty()) outputSink.accept(nuclearEvent.outputItem().copy());
-        emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        float retained = emitReserved(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
         maybeMelt(level, pos, nuclearEvent.type(), nuclearEvent.heatEmission());
-        return new StateProcessResult(ProcessStatus.MUTATED, nuclearEvent.outputState());
+        return new StateProcessResult(ProcessStatus.MUTATED, retainHeat(nuclearEvent.outputState(), retained));
     }
 
     public Optional<NuclearStateEvent> evaluateState(ChemicalState state, double elapsedSeconds, NuclearEnvironment environment, RandomSource random) {
@@ -177,12 +200,20 @@ public class NuclearSimulationService {
     }
 
     public Optional<NuclearStackEvent> evaluateStack(ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, RandomSource random) {
-        if (stack.isEmpty() || !(stack.getItem() instanceof Element element)) return Optional.empty();
-        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (id == null) return Optional.empty();
-        ChemicalState state = stackState(id.toString(), element, stack.getCount());
+        Optional<RadioactiveFormResolver.ResolvedForm> form = RadioactiveFormResolver.INSTANCE.resolve(stack);
+        if (form.isEmpty()) return Optional.empty();
         long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
-        LoadedExposureClock.Window exposure = LoadedExposureClock.advance(stack.getOrCreateTag(), elapsedTicks, random.nextLong());
+        LoadedExposureClock.Window exposure = LoadedExposureClock.preview(stack.getTag(), elapsedTicks, random.nextLong());
+        return evaluateStack(stack, environment, exposure);
+    }
+
+    private Optional<NuclearStackEvent> evaluateStack(ItemStack stack, NuclearEnvironment environment, LoadedExposureClock.Window exposure) {
+        Optional<RadioactiveFormResolver.ResolvedForm> form = RadioactiveFormResolver.INSTANCE.resolve(stack);
+        if (form.isEmpty()) return Optional.empty();
+        ResourceLocation id = ResourceLocation.tryParse(form.get().chemicalId());
+        if (id == null) return Optional.empty();
+        ChemicalState state = NuclearStackData.peekState(stack, form.get()).withMass(form.get().unitMass() * stack.getCount());
+        double elapsedSeconds = Math.max(0L, exposure.endTick() - exposure.startTick()) / 20.0;
         IsotopeEnsemble ensemble = IsotopeItemData.explicit(stack);
         int selectedMass = ensemble.isNatural()
             ? 0
@@ -192,7 +223,7 @@ public class NuclearSimulationService {
             if (!rule.matches(state)) continue;
             if (selectedMass > 0 && selectedMass != rule.isotopeMassNumber()) continue;
             double decayRoll = LoadedExposureClock.deterministicRoll(exposure, "decay:" + rule.id());
-            if (decayRoll < rule.decayProbability(elapsedTicks / 20.0)) {
+            if (decayRoll < rule.decayProbability(elapsedSeconds)) {
                 Item daughter = rule.outputChemicalItemValue();
                 if (isMissing(daughter)) return Optional.empty();
                 return Optional.of(new NuclearStackEvent(
@@ -229,8 +260,7 @@ public class NuclearSimulationService {
     public boolean isNuclearRelevant(ItemStack stack) {
         if (stack.isEmpty()) return false;
         if (stack.is(LatentChemlibMod.SEALED_CHEMICAL_CELL.get())) return ChemicalCellItem.hasState(stack) && isNuclearRelevant(ChemicalCellItem.state(stack));
-        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        return id != null && isUnstableConfiguredChemical(id.toString());
+        return RadioactiveFormResolver.INSTANCE.resolve(stack).isPresent();
     }
 
     public boolean isNuclearRelevant(ChemicalState state) {
@@ -253,10 +283,9 @@ public class NuclearSimulationService {
     }
 
     public double intrinsicFlux(ItemStack stack, NuclearEnvironment environment) {
-        if (stack.isEmpty() || !(stack.getItem() instanceof Element element)) return 0.0;
-        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (id == null) return 0.0;
-        return neutronFlux(stackState(id.toString(), element, stack.getCount()), new NuclearEnvironment(
+        Optional<RadioactiveFormResolver.ResolvedForm> form = RadioactiveFormResolver.INSTANCE.resolve(stack);
+        if (form.isEmpty()) return 0.0;
+        return neutronFlux(NuclearStackData.peekState(stack, form.get()).withMass(form.get().unitMass() * stack.getCount()), new NuclearEnvironment(
             environment.moderation(), environment.absorption(), 0.0, environment.contactFraction()
         ));
     }
@@ -281,27 +310,62 @@ public class NuclearSimulationService {
         return new NuclearEnvironment(Math.min(4.0, moderation), Math.min(0.95, absorption), 0.0, contacts / 6.0);
     }
 
-    private ProcessStatus processCellStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+    private ProcessStatus processCellStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds,
+        NuclearEnvironment environment, HeatBlockEntity heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STATE_EVALUATIONS, 1)) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
         ChemicalState state = ChemicalCellItem.state(stack);
         long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
-        LoadedExposureClock.Window exposure = LoadedExposureClock.advance(stack.getOrCreateTag(), elapsedTicks, level.getRandom().nextLong());
+        LoadedExposureClock.Window exposure = LoadedExposureClock.preview(stack.getTag(), elapsedTicks, level.getRandom().nextLong());
         Optional<NuclearStateEvent> event = evaluateState(
             state, elapsedTicks / 20.0, environment,
             RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "sealed-cell"))
         );
-        if (event.isEmpty()) return ProcessStatus.UNCHANGED;
+        if (event.isEmpty()) {
+            LoadedExposureClock.commit(stack.getOrCreateTag(), exposure);
+            bindContainedIdentity(stack, state);
+            return ProcessStatus.UNCHANGED;
+        }
         NuclearStateEvent nuclearEvent = event.get();
-        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
+        if (!reserveConsequences(level, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel())) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
-        ItemStack updated = ChemicalCellItem.withState(stack, nuclearEvent.outputState());
+        LoadedExposureClock.commit(stack.getOrCreateTag(), exposure);
+        bindContainedIdentity(stack, state);
+        float retained = emitReserved(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        ItemStack updated = ChemicalCellItem.withState(stack, retainHeat(nuclearEvent.outputState(), retained));
         stack.setTag(updated.getTag());
-        if (outputSink != null && nuclearEvent.outputItem() != null && !nuclearEvent.outputItem().isEmpty()) outputSink.accept(nuclearEvent.outputItem().copy());
-        emit(level, pos, heatSink, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel());
+        if (outputSink != null && nuclearEvent.outputItem() != null && !nuclearEvent.outputItem().isEmpty()) {
+            outputSink.accept(nuclearEvent.type(), nuclearEvent.outputItem().copy());
+        }
         maybeMelt(level, pos, nuclearEvent.type(), nuclearEvent.heatEmission());
+        return ProcessStatus.MUTATED;
+    }
+
+    private static void bindContainedIdentity(ItemStack stack, ChemicalState state) {
+        LatentDataManager.INSTANCE.nuclearDecayRules().stream()
+            .filter(rule -> rule.matches(state))
+            .findFirst()
+            .ifPresent(rule -> NuclearStackData.bindIdentity(
+                stack, "sealed_cell:" + rule.inputChemical(), rule.isotopeMassNumber()
+            ));
+    }
+
+    private ProcessStatus processMaterialStack(ServerLevel level, BlockPos pos, ItemStack stack,
+        RadioactiveFormResolver.ResolvedForm form, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink) {
+        if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STACK_EVALUATIONS, 1)) return ProcessStatus.BUDGET_EXHAUSTED;
+        ChemicalState unitState = NuclearStackData.peekState(stack, form);
+        Optional<NuclearStateEvent> event = evaluateState(unitState, elapsedSeconds, environment, level.getRandom());
+        if (event.isEmpty()) return ProcessStatus.UNCHANGED;
+        NuclearStateEvent nuclearEvent = event.get();
+        float totalHeat = nuclearEvent.heatEmission() * Math.max(1, stack.getCount());
+        if (!reserveConsequences(level, totalHeat, nuclearEvent.radiationLevel())) return ProcessStatus.BUDGET_EXHAUSTED;
+        float retainedTotal = emitReserved(level, pos, heatSink, totalHeat, nuclearEvent.radiationLevel());
+        ChemicalState nextUnit = retainHeat(nuclearEvent.outputState(), retainedTotal / Math.max(1, stack.getCount()));
+        NuclearStackData.setState(stack, nextUnit);
+        NuclearStackData.bindIdentity(stack, form.formId(), form.isotopeMassNumber());
+        maybeMelt(level, pos, nuclearEvent.type(), totalHeat);
         return ProcessStatus.MUTATED;
     }
 
@@ -351,10 +415,6 @@ public class NuclearSimulationService {
         return Optional.of(new NuclearStackEvent(product.chemicalId(), output, 1, 1, heat, radiationFromFlux(flux), product.type()));
     }
 
-    private static ChemicalState stackState(String chemicalId, Element element, int count) {
-        return new ChemicalState(chemicalId, count * Math.max(1.0, element.getAtomicNumber()), 1.0, 293.0, 0.0, 0.0);
-    }
-
     private static InducedProduct inducedProduct(String chemicalId, double flux) {
         Optional<ReactionRule> captureRule = captureRule(chemicalId);
         if (captureRule.isEmpty()) return InducedProduct.EMPTY;
@@ -378,13 +438,18 @@ public class NuclearSimulationService {
         return Optional.empty();
     }
 
-    private void emit(ServerLevel level, BlockPos pos, HeatBlockEntity heatSink, float heatEmission, int radiationLevel) {
-        if (heatEmission > 0.0f && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1)) {
-            distributeHeat(level, pos, heatSink, heatEmission);
-        }
-        if (pos != null && radiationLevel > 0 && SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_RADIATION_EMISSIONS, 1)) {
-            LatentRadiationService.emit(level, pos, radiationLevel);
-        }
+    private boolean reserveConsequences(ServerLevel level, float heatEmission, int radiationLevel) {
+        EnumMap<SimulationBudget, Integer> costs = new EnumMap<>(SimulationBudget.class);
+        costs.put(SimulationBudget.NUCLEAR_MUTATIONS, 1);
+        if (heatEmission > 0.0f) costs.put(SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1);
+        if (radiationLevel > 0) costs.put(SimulationBudget.NUCLEAR_RADIATION_EMISSIONS, 1);
+        return SimulationScheduler.INSTANCE.trySpendAll(level, costs);
+    }
+
+    private float emitReserved(ServerLevel level, BlockPos pos, HeatBlockEntity heatSink, float heatEmission, int radiationLevel) {
+        float retained = heatEmission > 0.0f ? distributeHeat(level, pos, heatSink, heatEmission) : 0.0f;
+        if (pos != null && radiationLevel > 0) LatentRadiationService.emit(level, pos, radiationLevel);
+        return retained;
     }
 
     void emitAmbientHeat(ServerLevel level, BlockPos pos, float heatEmission) {
@@ -434,7 +499,7 @@ public class NuclearSimulationService {
         }
     }
 
-    private static void distributeHeat(ServerLevel level, BlockPos pos, HeatBlockEntity direct, float heatEmission) {
+    private static float distributeHeat(ServerLevel level, BlockPos pos, HeatBlockEntity direct, float heatEmission) {
         List<IHeatStorage> targets = new ArrayList<>();
         Set<IHeatStorage> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         if (direct != null && seen.add(direct)) targets.add(direct);
@@ -452,6 +517,13 @@ public class NuclearSimulationService {
             float fairShare = remaining / (targets.size() - index);
             remaining -= targets.get(index).addHeat(fairShare, false);
         }
+        return remaining;
+    }
+
+    private static ChemicalState retainHeat(ChemicalState state, float retained) {
+        if (retained <= 0.0f || state.mass() <= 0.0) return state;
+        double temperatureRise = retained / Math.max(1.0, state.mass() * traits(state.chemicalId()).heatCapacity());
+        return state.withConditions(state.temperature() + temperatureRise, state.charge(), state.energy() + retained);
     }
 
     private static Item item(String itemId) {

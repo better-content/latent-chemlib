@@ -30,6 +30,7 @@ public class LatentDataManager implements PreparableReloadListener {
     private volatile NuclearPhenomenaProfile nuclearPhenomenaProfile = NuclearPhenomenaProfile.defaults();
     private volatile List<ReactionRule> reactionRules = List.of();
     private volatile List<NuclearDecayRule> nuclearDecayRules = List.of();
+    private volatile List<NuclearFormRule> nuclearFormRules = List.of();
     private volatile IsotopeCatalog isotopeCatalog = IsotopeCatalog.empty();
 
     public ChemicalTraits traits(String chemicalId) {
@@ -57,6 +58,10 @@ public class LatentDataManager implements PreparableReloadListener {
         return nuclearDecayRules;
     }
 
+    public List<NuclearFormRule> nuclearFormRules() {
+        return nuclearFormRules;
+    }
+
     public IsotopeCatalog isotopeCatalog() {
         return isotopeCatalog;
     }
@@ -72,12 +77,14 @@ public class LatentDataManager implements PreparableReloadListener {
                 nuclearPhenomenaProfile = snapshot.nuclearPhenomenaProfile();
                 reactionRules = snapshot.reactionRules();
                 nuclearDecayRules = snapshot.nuclearDecayRules();
+                nuclearFormRules = snapshot.nuclearFormRules();
                 isotopeCatalog = snapshot.isotopeCatalog();
                 LatentChemlibMod.LOGGER.info(
-                    "Loaded {} latent chemical trait overrides, {} reaction rules, {} nuclear decay rules, and {} known isotopes",
+                    "Loaded {} latent chemical trait overrides, {} reaction rules, {} nuclear decay rules, {} nuclear form rules, and {} known isotopes",
                     traits.size(),
                     reactionRules.size(),
                     nuclearDecayRules.size(),
+                    nuclearFormRules.size(),
                     isotopeCatalog.allKnown().size()
                 );
             }, gameExecutor);
@@ -87,6 +94,7 @@ public class LatentDataManager implements PreparableReloadListener {
         Map<String, ChemicalTraits> loadedTraits = new HashMap<>();
         java.util.ArrayList<ReactionRule> loadedRules = new java.util.ArrayList<>();
         java.util.ArrayList<NuclearDecayRule> loadedDecayRules = new java.util.ArrayList<>();
+        java.util.ArrayList<NuclearFormRule> loadedFormRules = new java.util.ArrayList<>();
         Map<String, IsotopeDefinition> loadedIsotopes = new HashMap<>();
         resourceManager.listResources("chemical_traits", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
             try (var reader = resource.openAsReader()) {
@@ -183,6 +191,21 @@ public class LatentDataManager implements PreparableReloadListener {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent isotope catalogue file {}", id, ex);
             }
         });
+        resourceManager.listResources("nuclear_forms", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
+            try (var reader = resource.openAsReader()) {
+                JsonElement root = GSON.fromJson(reader, JsonElement.class);
+                JsonArray forms = root.isJsonArray() ? root.getAsJsonArray() : root.getAsJsonObject().getAsJsonArray("forms");
+                if (forms == null) return;
+                for (JsonElement element : forms) {
+                    if (element == null || !element.isJsonObject()) continue;
+                    JsonObject json = element.getAsJsonObject();
+                    NuclearFormRule rule = new NuclearFormRule(text(json, "suffix", ""), number(json, "material_units", 1.0));
+                    if (!rule.suffix().isBlank()) loadedFormRules.add(rule);
+                }
+            } catch (Exception ex) {
+                LatentChemlibMod.LOGGER.warn("Ignoring invalid latent nuclear form file {}", id, ex);
+            }
+        });
         for (NuclearDecayRule rule : loadedDecayRules) {
             int massNumber = rule.isotopeMassNumber();
             if (massNumber <= 0) continue;
@@ -193,7 +216,7 @@ public class LatentDataManager implements PreparableReloadListener {
         }
         return new Snapshot(
             Map.copyOf(loadedTraits), profile, loadedMachineProfile, loadedNuclearPhenomenaProfile,
-            List.copyOf(loadedRules), List.copyOf(loadedDecayRules),
+            List.copyOf(loadedRules), List.copyOf(loadedDecayRules), List.copyOf(loadedFormRules),
             new IsotopeCatalog(List.copyOf(loadedIsotopes.values()))
         );
     }
@@ -328,6 +351,7 @@ public class LatentDataManager implements PreparableReloadListener {
         NuclearPhenomenaProfile nuclearPhenomenaProfile,
         List<ReactionRule> reactionRules,
         List<NuclearDecayRule> nuclearDecayRules,
+        List<NuclearFormRule> nuclearFormRules,
         IsotopeCatalog isotopeCatalog
     ) {}
 }

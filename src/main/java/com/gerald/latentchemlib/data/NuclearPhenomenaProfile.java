@@ -28,6 +28,8 @@ public record NuclearPhenomenaProfile(
     double fusionMassDefectFraction,
     float fusionHeatEmission,
     int fusionRadiationLevel,
+    int decayMinimumIsotopeMassNumber,
+    double decayMinimumSpecificHeatPerSecond,
     double decayReferenceMass,
     double decayHalfLifeLogScale,
     float surroundingMeltHeatThreshold
@@ -37,7 +39,7 @@ public record NuclearPhenomenaProfile(
         256.0, 0.65, 227, 34.5, 4.0, 600.0, 18_000.0, 0.20, 0.30,
         8.0, 0.58, 0.002, "chemlib:barium", "chemlib:krypton", 12_000.0f, 12,
         8_000.0, 4.0, 50_000.0, 4.0, 0.007, 24_000.0f, 8,
-        256.0, 1.0,
+        209, 4.0, 256.0, 1.0,
         10_000.0f
     );
 
@@ -81,6 +83,8 @@ public record NuclearPhenomenaProfile(
             fraction(json, "fusion_mass_defect_fraction", fallback.fusionMassDefectFraction()),
             positiveFloat(json, "fusion_heat_emission", fallback.fusionHeatEmission()),
             positiveInt(json, "fusion_radiation_level", fallback.fusionRadiationLevel()),
+            positiveInt(json, "decay_minimum_isotope_mass_number", fallback.decayMinimumIsotopeMassNumber()),
+            positive(json, "decay_minimum_specific_heat_per_second", fallback.decayMinimumSpecificHeatPerSecond()),
             positive(json, "decay_reference_mass", fallback.decayReferenceMass()),
             positive(json, "decay_half_life_log_scale", fallback.decayHalfLifeLogScale()),
             positiveFloat(json, "surrounding_melt_heat_threshold", fallback.surroundingMeltHeatThreshold())

@@ -2,6 +2,7 @@ package com.gerald.latentchemlib.gametest;
 
 import com.gerald.latentchemlib.LatentChemlibMod;
 import com.gerald.latentchemlib.api.LatentCapabilities;
+import com.mojang.authlib.GameProfile;
 import com.endertech.minecraft.mods.adpother.AdPother;
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
 import com.endertech.minecraft.mods.adchimneys.AdChimneys;
@@ -20,9 +21,17 @@ import com.gerald.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.GasFluidCodec;
 import com.gerald.latentchemlib.sim.NuclearPhenomenaMath;
+import com.gerald.latentchemlib.sim.NuclearSimulationService;
+import com.gerald.latentchemlib.sim.NuclearStackData;
+import com.gerald.latentchemlib.sim.NuclearSurfaceScanner;
+import com.gerald.latentchemlib.sim.RadioactiveFormResolver;
+import com.gerald.latentchemlib.sim.SimulationBudget;
+import com.gerald.latentchemlib.sim.SimulationScheduler;
 import com.gerald.latentchemlib.data.LatentDataManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;
@@ -35,6 +44,7 @@ import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import me.desht.pneumaticcraft.api.PNCCapabilities;
 import net.minecraftforge.fluids.FluidStack;
@@ -45,6 +55,9 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.UUID;
 
 @GameTestHolder(LatentChemlibMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -611,6 +624,153 @@ public final class LatentChemlibGameTests {
                 "The active dropped-item scanner must advect radioactive matter with lava flow");
             helper.succeed();
         });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 40)
+    public static void everyConfiguredRadioactiveRegistrationResolvesByIsotopeAndFormData(GameTestHelper helper) {
+        Set<String> expected = new LinkedHashSet<>();
+        LatentDataManager.INSTANCE.nuclearDecayRules().forEach(decay -> {
+            expected.add(decay.inputChemical());
+            ResourceLocation base = ResourceLocation.tryParse(decay.inputChemical());
+            if (base == null) return;
+            LatentDataManager.INSTANCE.nuclearFormRules().forEach(form -> {
+                ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(base.getNamespace(), base.getPath() + form.suffix());
+                if (ForgeRegistries.ITEMS.containsKey(candidate)) expected.add(candidate.toString());
+            });
+        });
+        helper.assertTrue(expected.size() == 78, "The live isotope/form cross-product must contain the audited 78 registrations, got " + expected.size());
+        for (String id : expected) {
+            ItemStack stack = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse(id)));
+            var resolved = RadioactiveFormResolver.INSTANCE.resolve(stack);
+            helper.assertTrue(resolved.isPresent(), "Radioactive form must resolve: " + id);
+            helper.assertTrue(resolved.get().isotopeMassNumber() >= 209, "Resolved form must satisfy the configured heavy-isotope threshold: " + id);
+            if (id.equals("chemlib:bismuth") || id.equals("chemlib:bismuth_dust") || id.equals("chemlib:bismuth_ingot") || id.equals("chemlib:bismuth_plate")) {
+                helper.assertTrue(resolved.get().unitMass() == 209.0, "Bi-209 unit mass must use isotope A=209, not atomic number Z=83: " + id);
+            }
+            if (id.equals("chemlib:bismuth_metal_block")) {
+                helper.assertTrue(resolved.get().unitMass() == 1881.0, "A metal block must contain nine isotope-scaled material units");
+            }
+            if (id.equals("chemlib:bismuth_nugget")) {
+                helper.assertTrue(Math.abs(resolved.get().unitMass() - (209.0 / 9.0)) < 1.0e-9,
+                    "A nugget must contain one ninth of an isotope-scaled material unit");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 80)
+    public static void alternateFormInBlockInventoryContinuouslyDecaysAndHeatsTouchingSink(GameTestHelper helper) {
+        BlockPos chestPos = new BlockPos(2, 1, 1);
+        helper.setBlock(chestPos, Blocks.CHEST);
+        ChestBlockEntity chest = (ChestBlockEntity) helper.getBlockEntity(chestPos);
+        ItemStack dust = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth_dust")));
+        chest.setItem(0, dust);
+        chest.setChanged();
+        NuclearSurfaceScanner.markActive(chest);
+        LatentMachineBlockEntity sink = placeMachine(helper, chestPos.east(), LatentChemlibMod.GAS_TANK.get());
+
+        helper.succeedWhen(() -> {
+            ItemStack stored = chest.getItem(0);
+            helper.assertTrue(stored.hasTag() && stored.getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+                "Alternate form must carry its per-unit nuclear ledger");
+            ChemicalState state = ChemicalState.load(stored.getOrCreateTag().getCompound(NuclearStackData.STATE_KEY));
+            helper.assertTrue(state.massOf("chemlib:thallium") > 0.0, "Bismuth dust must continuously form its daughter");
+            helper.assertTrue(sink.getHeat() >= 700.0f, "Bi-209 dust must deliver substantial configured decay heat to touching HeatSync material");
+            helper.assertTrue(NuclearStackData.isotopes(stored).fraction(209) == 1.0, "Isotope state must remain bound to the material ledger");
+            helper.assertTrue(NuclearStackData.provenance(stored).equals("chemlib:bismuth_dust"), "Alternate-form provenance must survive daughter formation");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 80)
+    public static void sealedCellInBlockInventoryUsesTheSameContinuousDecayPath(GameTestHelper helper) {
+        BlockPos chestPos = new BlockPos(2, 1, 1);
+        helper.setBlock(chestPos, Blocks.CHEST);
+        ChestBlockEntity chest = (ChestBlockEntity) helper.getBlockEntity(chestPos);
+        ItemStack cell = new ItemStack(LatentChemlibMod.SEALED_CHEMICAL_CELL.get());
+        ChemicalCellItem.setState(cell, new ChemicalState("chemlib:bismuth", 1_000.0, 8.0, 600.0, 0.0, 0.0));
+        chest.setItem(0, cell);
+        chest.setChanged();
+        NuclearSurfaceScanner.markActive(chest);
+        LatentMachineBlockEntity sink = placeMachine(helper, chestPos.east(), LatentChemlibMod.GAS_TANK.get());
+
+        helper.succeedWhen(() -> {
+            ChemicalState state = ChemicalCellItem.state(chest.getItem(0));
+            helper.assertTrue(state.massOf("chemlib:thallium") > 0.0, "Stored sealed cell must form its daughter");
+            helper.assertTrue(sink.getHeat() >= 3_500.0f, "Stored sealed cell must deliver substantial configured heat to touching HeatSync material");
+            helper.assertTrue(NuclearStackData.isotopes(chest.getItem(0)).fraction(209) == 1.0,
+                "Sealed-cell isotope identity must survive daughter formation");
+            helper.assertTrue(NuclearStackData.provenance(chest.getItem(0)).equals("sealed_cell:chemlib:bismuth"),
+                "Sealed-cell provenance must survive daughter formation");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 80)
+    public static void droppedAlternateFormContinuouslyDecaysAndHeatsTouchingSink(GameTestHelper helper) {
+        BlockPos itemPos = new BlockPos(2, 1, 1);
+        ItemStack dust = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth_dust")));
+        ItemEntity item = helper.spawnItem(dust.getItem(), itemPos);
+        item.setNoGravity(true);
+        LatentMachineBlockEntity sink = placeMachine(helper, itemPos.east(), LatentChemlibMod.GAS_TANK.get());
+
+        helper.succeedWhen(() -> {
+            helper.assertTrue(item.isAlive(), "Dropped radioactive alternate form must remain represented after continuous decay");
+            ItemStack stored = item.getItem();
+            helper.assertTrue(stored.hasTag() && stored.getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+                "Dropped alternate form must carry its nuclear ledger");
+            ChemicalState state = ChemicalState.load(stored.getOrCreateTag().getCompound(NuclearStackData.STATE_KEY));
+            helper.assertTrue(state.massOf("chemlib:thallium") > 0.0, "Dropped Bi-209 dust must form its daughter");
+            helper.assertTrue(sink.getHeat() >= 700.0f, "Dropped Bi-209 dust must heat touching HeatSync material substantially");
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 100)
+    public static void carriedAlternateFormContinuouslyDecays(GameTestHelper helper) {
+        ServerPlayer player = new ServerPlayer(
+            helper.getLevel().getServer(), helper.getLevel(), new GameProfile(UUID.randomUUID(), "nuclear-holder-probe")
+        );
+        BlockPos playerPos = helper.absolutePos(new BlockPos(2, 1, 1));
+        player.setPos(playerPos.getX() + 0.5, playerPos.getY(), playerPos.getZ() + 0.5);
+        ItemStack plate = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth_plate")));
+        player.getInventory().setItem(0, plate);
+        player.getInventory().setChanged();
+        NuclearSurfaceScanner.INSTANCE.scanPlayerNow(helper.getLevel(), player);
+
+        ItemStack carried = player.getInventory().getItem(0);
+        helper.assertTrue(carried.hasTag() && carried.getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+            "Carried radioactive alternate form must be processed by the player inventory scanner");
+        ChemicalState state = ChemicalState.load(carried.getOrCreateTag().getCompound(NuclearStackData.STATE_KEY));
+        helper.assertTrue(state.massOf("chemlib:thallium") > 0.0, "Carried Bi-209 plate must continuously form its daughter");
+        helper.assertTrue(state.energy() >= 1_500.0, "Two seconds of unaccepted carried decay heat must remain in the material state");
+        helper.assertTrue(NuclearStackData.provenance(carried).equals("chemlib:bismuth_plate"),
+            "Carried form provenance must survive daughter formation");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearAtomicity", timeoutTicks = 40)
+    public static void exhaustedConsequenceBudgetLeavesStackNbtByteForByteUnchanged(GameTestHelper helper) {
+        ItemStack cell = new ItemStack(LatentChemlibMod.SEALED_CHEMICAL_CELL.get());
+        ChemicalCellItem.setState(cell, new ChemicalState("chemlib:bismuth", 1_000.0, 8.0, 600.0, 0.0, 0.0));
+        CompoundTag before = cell.getTag().copy();
+        while (SimulationScheduler.INSTANCE.trySpend(helper.getLevel(), SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
+            // Exhaust this transaction resource without touching the test stack.
+        }
+        var status = NuclearSimulationService.INSTANCE.processStack(
+            helper.getLevel(), helper.absolutePos(new BlockPos(2, 1, 1)), cell, 1.0,
+            NuclearSimulationService.NuclearEnvironment.EMPTY, null, ignored -> {}
+        );
+        helper.assertTrue(status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED,
+            "A continuous decay transaction must stop when any consequence budget is unavailable");
+        helper.assertTrue(before.equals(cell.getTag()),
+            "Failed reservation must leave state, isotope, provenance, and exposure NBT byte-for-byte unchanged");
+
+        ItemStack raw = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth")));
+        helper.assertTrue(raw.getTag() == null, "Evaluation purity probe must start without NBT");
+        NuclearSimulationService.INSTANCE.evaluateStack(
+            raw, 1.0, NuclearSimulationService.NuclearEnvironment.EMPTY, RandomSource.create(42L)
+        );
+        helper.assertTrue(raw.getTag() == null, "Public stack evaluation must not advance exposure or initialize nuclear NBT");
+        // Keep this batch alive through the next scheduler reset so its deliberate exhaustion cannot starve later batches.
+        helper.runAfterDelay(21, helper::succeed);
     }
 
     private static void assertMachineEntity(GameTestHelper helper, BlockPos pos, Block block) {

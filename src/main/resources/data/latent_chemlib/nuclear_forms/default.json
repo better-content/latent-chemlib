@@ -1,0 +1,11 @@
+{
+  "schema": "bc.latent_chemlib.nuclear_forms.v1",
+  "forms": [
+    { "suffix": "_metal_block", "material_units": 9.0 },
+    { "suffix": "_nugget", "material_units": 0.1111111111111111 },
+    { "suffix": "_ingot", "material_units": 1.0 },
+    { "suffix": "_plate", "material_units": 1.0 },
+    { "suffix": "_dust", "material_units": 1.0 },
+    { "suffix": "_bucket", "material_units": 64.0 }
+  ]
+}

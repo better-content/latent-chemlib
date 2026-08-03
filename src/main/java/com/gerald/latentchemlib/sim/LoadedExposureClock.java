@@ -8,16 +8,26 @@ public final class LoadedExposureClock {
 
     private LoadedExposureClock() {}
 
-    public static Window advance(CompoundTag stackTag, long elapsedTicks, long seedCandidate) {
-        CompoundTag clock = stackTag.getCompound(TAG_KEY);
+    public static Window preview(CompoundTag stackTag, long elapsedTicks, long seedCandidate) {
+        CompoundTag clock = stackTag == null ? new CompoundTag() : stackTag.getCompound(TAG_KEY);
         long start = Math.max(0L, clock.getLong("t"));
         long bounded = Math.max(0L, elapsedTicks);
         long end = start > Long.MAX_VALUE - bounded ? Long.MAX_VALUE : start + bounded;
         long seed = clock.contains("s") ? clock.getLong("s") : mix(seedCandidate);
-        clock.putLong("t", end);
-        clock.putLong("s", seed);
-        stackTag.put(TAG_KEY, clock);
         return new Window(start, end, seed);
+    }
+
+    public static void commit(CompoundTag stackTag, Window window) {
+        CompoundTag clock = new CompoundTag();
+        clock.putLong("t", window.endTick());
+        clock.putLong("s", window.seed());
+        stackTag.put(TAG_KEY, clock);
+    }
+
+    public static Window advance(CompoundTag stackTag, long elapsedTicks, long seedCandidate) {
+        Window window = preview(stackTag, elapsedTicks, seedCandidate);
+        commit(stackTag, window);
+        return window;
     }
 
     public static double deterministicRoll(Window window, String channel) {
