@@ -121,7 +121,16 @@ public class NuclearSimulationService {
             return new StateProcessResult(ProcessStatus.BUDGET_EXHAUSTED, state);
         }
         NuclearEnvironment environment = environment(level, pos);
-        Optional<NuclearStateEvent> event = evaluateState(state, elapsedSeconds, environment, level.getRandom());
+        long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
+        long endTick = level.getGameTime();
+        LoadedExposureClock.Window window = new LoadedExposureClock.Window(
+            Math.max(0L, endTick - elapsedTicks), endTick,
+            level.getSeed() ^ (pos == null ? 0L : pos.asLong())
+        );
+        Optional<NuclearStateEvent> event = evaluateState(
+            state, elapsedTicks / 20.0, environment,
+            RandomSource.create(LoadedExposureClock.deterministicSeed(window, "chemical-state"))
+        );
         if (event.isEmpty()) return new StateProcessResult(ProcessStatus.UNCHANGED, state);
         NuclearStateEvent nuclearEvent = event.get();
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {
@@ -161,6 +170,7 @@ public class NuclearSimulationService {
         int selectedMass = ensemble.isNatural()
             ? 0
             : ensemble.select(LoadedExposureClock.deterministicRoll(exposure, "isotope:" + id));
+        RandomSource deterministic = RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "stack-event:" + id));
         for (NuclearDecayRule rule : LatentDataManager.INSTANCE.nuclearDecayRules()) {
             if (!rule.matches(state)) continue;
             if (selectedMass > 0 && selectedMass != rule.isotopeMassNumber()) continue;
@@ -180,7 +190,7 @@ public class NuclearSimulationService {
             }
             break;
         }
-        return inducedStackEvent(state, environment, random);
+        return inducedStackEvent(state, environment, deterministic);
     }
 
     public double neutronFlux(ChemicalState state, NuclearEnvironment environment) {
@@ -264,7 +274,12 @@ public class NuclearSimulationService {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
         ChemicalState state = ChemicalCellItem.state(stack);
-        Optional<NuclearStateEvent> event = evaluateState(state, elapsedSeconds, environment, level.getRandom());
+        long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
+        LoadedExposureClock.Window exposure = LoadedExposureClock.advance(stack.getOrCreateTag(), elapsedTicks, level.getRandom().nextLong());
+        Optional<NuclearStateEvent> event = evaluateState(
+            state, elapsedTicks / 20.0, environment,
+            RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "sealed-cell"))
+        );
         if (event.isEmpty()) return ProcessStatus.UNCHANGED;
         NuclearStateEvent nuclearEvent = event.get();
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_MUTATIONS, 1)) {

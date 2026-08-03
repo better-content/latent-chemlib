@@ -27,6 +27,10 @@ class LoadedExposureClockTest {
 
         double first = LoadedExposureClock.deterministicRoll(window, "decay:uranium");
         assertEquals(first, LoadedExposureClock.deterministicRoll(window, "decay:uranium"));
+        assertEquals(
+            LoadedExposureClock.deterministicSeed(window, "decay:uranium"),
+            LoadedExposureClock.deterministicSeed(window, "decay:uranium")
+        );
         assertNotEquals(first, LoadedExposureClock.deterministicRoll(window, "decay:thorium"));
         assertNotEquals(first, LoadedExposureClock.deterministicRoll(new LoadedExposureClock.Window(40L, 60L, 123L), "decay:uranium"));
     }

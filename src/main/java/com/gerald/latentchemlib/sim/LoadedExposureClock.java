@@ -21,9 +21,13 @@ public final class LoadedExposureClock {
     }
 
     public static double deterministicRoll(Window window, String channel) {
-        long channelHash = channel == null ? 0L : channel.hashCode();
-        long bits = mix(window.seed() ^ Long.rotateLeft(window.startTick(), 17) ^ window.endTick() ^ channelHash);
+        long bits = deterministicSeed(window, channel);
         return (bits >>> 11) * 0x1.0p-53;
+    }
+
+    public static long deterministicSeed(Window window, String channel) {
+        long channelHash = channel == null ? 0L : channel.hashCode();
+        return mix(window.seed() ^ Long.rotateLeft(window.startTick(), 17) ^ window.endTick() ^ channelHash);
     }
 
     private static long mix(long value) {
