@@ -2,6 +2,7 @@ package com.gerald.latentchemlib.mixin.adpother;
 
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
 import com.gerald.latentchemlib.integration.adpother.AdpotherAtmosphereBridge;
+import com.gerald.latentchemlib.integration.adpother.AdpotherRoutingProbe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.WorldGenLevel;
@@ -35,7 +36,10 @@ public abstract class PollutantMixin {
         int amount,
         CallbackInfoReturnable<Integer> cir
     ) {
-        cir.setReturnValue(AdpotherAtmosphereBridge.INSTANCE.emit(self(), level, pos, amount));
+        int filtered = pumpActiveFilters(level, pos, amount);
+        int emitted = AdpotherAtmosphereBridge.INSTANCE.emit(self(), level, pos, amount - filtered);
+        AdpotherRoutingProbe.record(pos, amount, filtered, emitted);
+        cir.setReturnValue(filtered + emitted);
     }
 
     @Inject(method = "pumpEntitiesAt", at = @At("HEAD"), cancellable = true, require = 1)
@@ -47,6 +51,7 @@ public abstract class PollutantMixin {
     ) {
         int filtered = pumpActiveFilters(level, pos, amount);
         int emitted = AdpotherAtmosphereBridge.INSTANCE.emit(self(), level, pos, amount - filtered);
+        AdpotherRoutingProbe.record(pos, amount, filtered, emitted);
         cir.setReturnValue(filtered + emitted);
     }
 

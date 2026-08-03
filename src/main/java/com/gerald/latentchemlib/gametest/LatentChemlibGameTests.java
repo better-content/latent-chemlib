@@ -4,10 +4,16 @@ import com.gerald.latentchemlib.LatentChemlibMod;
 import com.gerald.latentchemlib.api.LatentCapabilities;
 import com.endertech.minecraft.mods.adpother.AdPother;
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
+import com.endertech.minecraft.mods.adchimneys.AdChimneys;
+import com.endertech.minecraft.mods.adchimneys.blocks.Chimney;
+import com.endertech.minecraft.mods.adchimneys.blocks.Pipe;
+import com.endertech.minecraft.mods.adchimneys.blocks.Pump;
+import com.endertech.minecraft.mods.adchimneys.blocks.Vent;
 import com.gerald.latentchemlib.blockentity.ChemicalCloudBlockEntity;
 import com.gerald.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
+import com.gerald.latentchemlib.integration.adpother.AdpotherRoutingProbe;
 import com.gerald.latentchemlib.integration.adpother.LatentGasHazardService;
 import com.gerald.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.gerald.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
@@ -23,6 +29,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.item.ItemStack;
@@ -34,6 +42,9 @@ import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @GameTestHolder(LatentChemlibMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -167,6 +178,26 @@ public final class LatentChemlibGameTests {
             "The integration must not place an AdPother gas block"
         );
         helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
+    public static void advancedChimneyRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
+        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.CHIMNEY);
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
+    public static void advancedVentRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
+        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.VENT);
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
+    public static void advancedPumpRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
+        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.PUMP);
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
+    public static void advancedPipeRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
+        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.PIPE);
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
@@ -585,6 +616,132 @@ public final class LatentChemlibGameTests {
     private static void assertMachineEntity(GameTestHelper helper, BlockPos pos, Block block) {
         helper.setBlock(pos, block);
         helper.assertTrue(helper.getBlockEntity(pos) instanceof LatentMachineBlockEntity, block.getDescriptionId() + " should create a latent machine entity");
+    }
+
+    private static void assertAdvancedChimneysRoute(GameTestHelper helper, AdvancedChimneysRoute route) {
+        BlockPos emitterPos = new BlockPos(1, 1, 1);
+        helper.setBlock(
+            emitterPos,
+            Blocks.FURNACE.defaultBlockState().setValue(BlockStateProperties.LIT, true)
+        );
+        BlockEntity emitterBlockEntity = helper.getBlockEntity(emitterPos);
+        helper.assertTrue(emitterBlockEntity instanceof FurnaceBlockEntity, "The route fixture must use a live furnace block entity");
+
+        BlockPos expectedOutlet = route.place(helper, emitterPos);
+        BlockPos absoluteEmitterPos = helper.absolutePos(emitterPos);
+        BlockPos absoluteOutlet = helper.absolutePos(expectedOutlet);
+
+        var adpotherEmitter = AdPother.getInstance().emitters
+            .get(helper.getLevel(), absoluteEmitterPos)
+            .orElseThrow(() -> new AssertionError("AdPother must load the configured minecraft:furnace emitter"));
+        helper.assertTrue(
+            AdChimneys.getInstance().emitters.get(helper.getLevel(), absoluteEmitterPos).isPresent(),
+            "Advanced Chimneys must load the same configured minecraft:furnace emitter"
+        );
+
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon")
+            .orElseThrow(() -> new AssertionError("AdPother carbon selector must be registered"));
+        List<AdpotherRoutingProbe.RouteEvent> routeEvents = new ArrayList<>();
+        int accepted = AdpotherRoutingProbe.observe(
+            routeEvents::add,
+            () -> carbon.emitFrom(emitterBlockEntity, adpotherEmitter.getRelatedBlocks(), 1)
+        );
+
+        helper.assertTrue(accepted == 1, route.label + " must accept exactly one configured emitter unit");
+        helper.assertTrue(
+            routeEvents.size() == 1,
+            route.label + " must select exactly one pollution outlet; observed " + routeEvents
+        );
+        AdpotherRoutingProbe.RouteEvent event = routeEvents.get(0);
+        helper.assertTrue(
+            event.outlet().equals(absoluteOutlet),
+            route.label + " must hand off at its resolved native outlet; expected " + absoluteOutlet + " but observed " + event.outlet()
+        );
+        helper.assertTrue(event.requested() == 1, route.label + " filter stage must account for the one requested unit");
+        helper.assertTrue(event.filtered() == 0, route.label + " empty filter path must not destroy the configured unit");
+        helper.assertTrue(event.emitted() == 1, route.label + " outlet handoff must insert the remaining unit into Latent");
+
+        BlockPos scanFrom = expectedOutlet.offset(-3, -3, -3);
+        BlockPos scanTo = expectedOutlet.offset(3, 3, 3);
+        helper.assertTrue(
+            totalCloudChemicalMass(helper, scanFrom, scanTo, "chemlib:carbon_dioxide") == 16.0,
+            route.label + " must convert one emitter unit into exactly 16 Latent carbon-dioxide mass"
+        );
+        helper.assertTrue(
+            totalCloudMass(helper, scanFrom, scanTo) == 16.0,
+            route.label + " must not duplicate or invent atmospheric mass"
+        );
+        for (BlockPos pos : BlockPos.betweenClosed(scanFrom, scanTo)) {
+            helper.assertTrue(!helper.getBlockState(pos).is(carbon), route.label + " must not leave a legacy AdPother gas block");
+        }
+        helper.succeed();
+    }
+
+    private enum AdvancedChimneysRoute {
+        CHIMNEY("Advanced Chimneys chimney") {
+            @Override
+            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
+                BlockPos chimneyPos = emitterPos.above();
+                helper.setBlock(chimneyPos, AdChimneys.getInstance().blocks.cobblestone_chimney.get());
+                helper.assertTrue(helper.getBlockState(chimneyPos).getBlock() instanceof Chimney, "Chimney fixture must use the registered Advanced Chimneys block");
+                return chimneyPos;
+            }
+        },
+        VENT("Advanced Chimneys vent network") {
+            @Override
+            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
+                BlockPos pumpPos = emitterPos.above();
+                BlockPos firstVent = pumpPos.above();
+                BlockPos secondVent = firstVent.east();
+                helper.setBlock(firstVent.west(), Blocks.STONE);
+                helper.setBlock(firstVent.north(), Blocks.STONE);
+                helper.setBlock(firstVent.south(), Blocks.STONE);
+                helper.setBlock(secondVent.north(), Blocks.STONE);
+                helper.setBlock(secondVent.south(), Blocks.STONE);
+                helper.setBlock(firstVent, AdChimneys.getInstance().blocks.stone_vent.get());
+                helper.setBlock(secondVent, AdChimneys.getInstance().blocks.stone_vent.get());
+                helper.setBlock(
+                    pumpPos,
+                    AdChimneys.getInstance().blocks.stone_pump.get().defaultBlockState()
+                        .setValue(BlockStateProperties.LIT, true)
+                );
+                helper.assertTrue(helper.getBlockState(firstVent).getBlock() instanceof Vent, "Vent fixture must use the registered Advanced Chimneys block");
+                helper.assertTrue(helper.getBlockState(secondVent).getBlock() instanceof Vent, "Vent fixture must use a live two-block vent network");
+                // ForgeEndertech's VentPipe.Output resolves and debits the starting vent before
+                // traversing the rest of the chain when Advanced Chimneys accepts every outlet.
+                return firstVent;
+            }
+        },
+        PUMP("Advanced Chimneys pump") {
+            @Override
+            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
+                BlockPos pumpPos = emitterPos.above();
+                helper.setBlock(
+                    pumpPos,
+                    AdChimneys.getInstance().blocks.stone_pump.get().defaultBlockState()
+                        .setValue(BlockStateProperties.LIT, true)
+                );
+                helper.assertTrue(helper.getBlockState(pumpPos).getBlock() instanceof Pump, "Pump fixture must use the registered Advanced Chimneys block");
+                return pumpPos.above();
+            }
+        },
+        PIPE("Advanced Chimneys pipe") {
+            @Override
+            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
+                BlockPos pipePos = emitterPos.above();
+                helper.setBlock(pipePos, AdChimneys.getInstance().blocks.pipe.get());
+                helper.assertTrue(helper.getBlockState(pipePos).getBlock() instanceof Pipe, "Pipe fixture must use the registered Advanced Chimneys block");
+                return pipePos.above();
+            }
+        };
+
+        private final String label;
+
+        AdvancedChimneysRoute(String label) {
+            this.label = label;
+        }
+
+        abstract BlockPos place(GameTestHelper helper, BlockPos emitterPos);
     }
 
     private static ChemicalCloudBlockEntity placeCloud(GameTestHelper helper, BlockPos pos) {

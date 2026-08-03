@@ -62,6 +62,13 @@ ordering="AFTER"
 side="BOTH"
 
 [[dependencies.${modId}]]
+modId="adchimneys"
+mandatory=true
+versionRange="[${adchimneysVersion},10.1.29.0)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${modId}]]
 modId="pneumaticcraft"
 mandatory=true
 versionRange="[${pneumaticCraftVersion},6.1.0)"
