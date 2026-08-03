@@ -200,7 +200,13 @@ public class GasEscapeHandler {
 
     public static void markActive(BlockEntity blockEntity) {
         if (blockEntity.getLevel() instanceof ServerLevel level) {
-            INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
+            if (!INSTANCE.hasEscapableHolder(blockEntity)) return;
+            if (SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) {
+                INSTANCE.scanHolder(blockEntity, blockEntity.getBlockPos(), level);
+            }
+            if (INSTANCE.hasEscapableHolder(blockEntity)) {
+                INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
+            }
         }
     }
 
@@ -252,12 +258,36 @@ public class GasEscapeHandler {
 
     private Optional<ItemStack> replaceEscapedStack(ItemStack stack, ServerLevel level, BlockPos origin) {
         Optional<EscapePayload> payload = escapePayload(stack);
-        if (payload.isEmpty() || !spawnCloud(level, origin, payload.get().state())) return Optional.empty();
+        if (payload.isEmpty()) return Optional.empty();
+        CloudInsertionService.InsertionResult inserted = CloudInsertionService.INSTANCE.insert(level, origin, payload.get().state());
+        if (!inserted.acceptedAll()) return Optional.empty();
+        if (inserted.target() != null && level.getBlockEntity(inserted.target()) instanceof ChemicalCloudBlockEntity cloud) {
+            cloud.bindNuclearIdentity(payload.get().provenance(), payload.get().exposureTicks(), payload.get().seed());
+        }
         return Optional.of(payload.get().replacement());
+    }
+
+    /** Deterministic live-server proof seam using the same atomic conversion path as inventory scans. */
+    public ItemStack escapeStackNow(ItemStack stack, ServerLevel level, BlockPos origin) {
+        return replaceEscapedStack(stack, level, origin).orElseGet(stack::copy);
     }
 
     private Optional<EscapePayload> escapePayload(ItemStack stack) {
         if (stack.isEmpty()) return Optional.empty();
+        Optional<RadioactiveFormResolver.ResolvedForm> radioactive = RadioactiveFormResolver.INSTANCE.resolve(stack);
+        boolean gaseousContainer = stack.getItem() instanceof Chemical chemical && canEscapeAsGas(chemical)
+            || stack.getItem() instanceof BucketItem bucket && GasFluidCodec.isGasFluid(bucket.getFluid());
+        if (radioactive.isPresent() && gaseousContainer) {
+            RadioactiveFormResolver.ResolvedForm form = radioactive.get();
+            ChemicalState state = NuclearStackData.peekState(stack, form)
+                .withMass(form.unitMass() * stack.getCount());
+            LoadedExposureClock.Window exposure = LoadedExposureClock.preview(stack.getTag(), 0L, stack.hashCode());
+            String provenance = NuclearStackData.provenance(stack);
+            if (provenance.isBlank()) provenance = form.formId();
+            ItemStack replacement = stack.getItem() instanceof BucketItem
+                ? new ItemStack(Items.BUCKET, stack.getCount()) : ItemStack.EMPTY;
+            return Optional.of(new EscapePayload(state, replacement, provenance, exposure.endTick(), exposure.seed()));
+        }
         if (stack.getItem() instanceof Chemical chemical && canEscapeAsGas(chemical)) {
             ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
             if (id == null) return Optional.empty();
@@ -271,7 +301,7 @@ public class GasEscapeHandler {
             return GasFluidCodec.stateFromFluid(new net.minecraftforge.fluids.FluidStack(bucket.getFluid(), 1_000))
                 .map(state -> new EscapePayload(
                     state.withMass(state.mass() * stack.getCount()),
-                    new ItemStack(Items.BUCKET, stack.getCount())
+                    new ItemStack(Items.BUCKET, stack.getCount()), "", 0L, 0L
                 ));
         }
         return Optional.empty();
@@ -358,5 +388,11 @@ public class GasEscapeHandler {
         }
     }
 
-    private record EscapePayload(ChemicalState state, ItemStack replacement) {}
+    private record EscapePayload(
+        ChemicalState state, ItemStack replacement, String provenance, long exposureTicks, long seed
+    ) {
+        private EscapePayload(ChemicalState state, ItemStack replacement) {
+            this(state, replacement, "", 0L, 0L);
+        }
+    }
 }

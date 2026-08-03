@@ -32,23 +32,28 @@ import java.util.WeakHashMap;
 public class NuclearSurfaceScanner {
     public static final NuclearSurfaceScanner INSTANCE = new NuclearSurfaceScanner();
     private static final int PLAYER_PERIOD_TICKS = 40;
+    private static final int SURFACE_CLASSES = 4;
 
+    private final Map<ServerLevel, ActiveHolderSet<UUID>> activePlayers = new WeakHashMap<>();
     private final Map<ServerLevel, ActiveHolderSet<UUID>> activeDroppedItems = new WeakHashMap<>();
     private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activeBlockInventories = new WeakHashMap<>();
+    private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activePlacedMaterials = new WeakHashMap<>();
+    private final Map<UUID, Integer> playerSlotCursors = new java.util.HashMap<>();
+    private final Map<ServerLevel, Integer> surfaceClassCursors = new WeakHashMap<>();
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || event.player.level().isClientSide() || event.player.tickCount % PLAYER_PERIOD_TICKS != 0) return;
-        if (!(event.player instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) return;
-        scanPlayerInventory(level, player);
+        if (event.phase != TickEvent.Phase.END || !(event.player instanceof ServerPlayer player)
+            || !(player.level() instanceof ServerLevel level)) return;
+        players(level).add(player.getUUID());
     }
 
     @SubscribeEvent
     public void onLevelTick(TickEvent.LevelTickEvent event) {
         if (event.phase != TickEvent.Phase.END || event.level.isClientSide() || event.level.getGameTime() % 20L != 0L) return;
         if (!(event.level instanceof ServerLevel level)) return;
-        scanDroppedItems(level);
-        scanBlockInventories(level);
+        level.players().forEach(player -> players(level).add(player.getUUID()));
+        scanFairSurfaceRound(level);
     }
 
     @SubscribeEvent
@@ -75,6 +80,7 @@ public class NuclearSurfaceScanner {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         ChunkPos unloaded = event.getChunk().getPos();
         blockInventories(level).removeIf(pos -> new ChunkPos(pos).equals(unloaded));
+        placedMaterials(level).removeIf(pos -> new ChunkPos(pos).equals(unloaded));
     }
 
     @SubscribeEvent
@@ -82,6 +88,10 @@ public class NuclearSurfaceScanner {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         activeDroppedItems.remove(level);
         activeBlockInventories.remove(level);
+        activePlacedMaterials.remove(level);
+        activePlayers.remove(level);
+        surfaceClassCursors.remove(level);
+        level.players().forEach(player -> playerSlotCursors.remove(player.getUUID()));
     }
 
     /** Called by the mutation hook; capability inspection is deferred to avoid chunk-load recursion. */
@@ -90,10 +100,26 @@ public class NuclearSurfaceScanner {
         INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
     }
 
+    public static void markPlacedActive(ServerLevel level, BlockPos pos) {
+        INSTANCE.placedMaterials(level).add(pos.immutable());
+    }
+
+    public static void unmarkPlaced(ServerLevel level, BlockPos pos) {
+        INSTANCE.placedMaterials(level).remove(pos);
+    }
+
     static int advanceCursor(int cursor, int size, int advanced) {
         if (size <= 0) return 0;
         int next = cursor + Math.max(0, advanced);
         return next % size;
+    }
+
+    static int surfaceClassAt(int cursor, int attempt) {
+        return Math.floorMod(cursor + attempt, SURFACE_CLASSES);
+    }
+
+    static int surfaceClassAfter(int visitedClass) {
+        return Math.floorMod(visitedClass + 1, SURFACE_CLASSES);
     }
 
     private void scanPlayerInventory(ServerLevel level, ServerPlayer player) {
@@ -114,14 +140,68 @@ public class NuclearSurfaceScanner {
         scanPlayerInventory(level, player);
     }
 
-    private void scanDroppedItems(ServerLevel level) {
-        ActiveHolderSet<UUID> active = droppedItems(level);
-        int holdersAtStart = active.size();
-        active.visit(holdersAtStart, uuid -> {
+    private void scanFairSurfaceRound(ServerLevel level) {
+        int holders = players(level).size() + droppedItems(level).size()
+            + blockInventories(level).size() + placedMaterials(level).size();
+        if (holders <= 0) return;
+        int classCursor = Math.floorMod(surfaceClassCursors.getOrDefault(level, 0), SURFACE_CLASSES);
+        int attempts = Math.max(SURFACE_CLASSES, holders * SURFACE_CLASSES);
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            int holderClass = surfaceClassAt(classCursor, attempt);
+            boolean canContinue = switch (holderClass) {
+                case 0 -> scanOnePlayer(level);
+                case 1 -> scanOneDroppedItem(level);
+                case 2 -> scanOneBlockInventory(level);
+                default -> scanOnePlacedMaterial(level);
+            };
+            surfaceClassCursors.put(level, surfaceClassAfter(holderClass));
+            if (!canContinue) return;
+        }
+    }
+
+    private boolean scanOnePlayer(ServerLevel level) {
+        boolean[] canContinue = { true };
+        players(level).visit(1, uuid -> {
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(uuid);
+            if (player == null || player.level() != level) {
+                playerSlotCursors.remove(uuid);
+                return ActiveHolderSet.Decision.REMOVE;
+            }
+            canContinue[0] = scanOnePlayerStack(level, player);
+            return canContinue[0] ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.STOP;
+        });
+        return canContinue[0];
+    }
+
+    private boolean scanOnePlayerStack(ServerLevel level, ServerPlayer player) {
+        Inventory inventory = player.getInventory();
+        int size = inventory.getContainerSize();
+        int start = Math.floorMod(playerSlotCursors.getOrDefault(player.getUUID(), 0), Math.max(1, size));
+        NuclearSimulationService.NuclearEnvironment baseEnvironment = NuclearSimulationService.environment(level, player.blockPosition());
+        for (int offset = 0; offset < size; offset++) {
+            int slot = (start + offset) % size;
+            ItemStack stack = inventory.getItem(slot);
+            NuclearSimulationService.NuclearEnvironment environment = inventoryEnvironment(inventory, slot, baseEnvironment);
+            if (!NuclearSimulationService.INSTANCE.canProcessStack(stack, environment)) continue;
+            playerSlotCursors.put(player.getUUID(), advanceCursor(slot, size, 1));
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return false;
+            return processPlayerStack(level, player, inventory, slot, stack, environment)
+                != NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED;
+        }
+        playerSlotCursors.put(player.getUUID(), (start + 1) % Math.max(1, size));
+        return true;
+    }
+
+    private boolean scanOneDroppedItem(ServerLevel level) {
+        boolean[] canContinue = { true };
+        droppedItems(level).visit(1, uuid -> {
             if (!(level.getEntity(uuid) instanceof ItemEntity item) || !item.isAlive() || !isRelevant(item.getItem())) {
                 return ActiveHolderSet.Decision.REMOVE;
             }
-            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
             advectInLava(level, item);
             ItemStack stack = item.getItem();
             NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
@@ -131,13 +211,71 @@ public class NuclearSurfaceScanner {
             if (stack.isEmpty()) {
                 item.discard();
                 return ActiveHolderSet.Decision.REMOVE;
-            } else {
-                item.setItem(stack);
             }
-            return status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED
-                ? ActiveHolderSet.Decision.STOP
-                : ActiveHolderSet.Decision.KEEP;
+            item.setItem(stack);
+            if (status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            return ActiveHolderSet.Decision.KEEP;
         });
+        return canContinue[0];
+    }
+
+    private boolean scanOneBlockInventory(ServerLevel level) {
+        boolean[] canContinue = { true };
+        blockInventories(level).visit(1, pos -> {
+            BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
+            if (blockEntity == null) return ActiveHolderSet.Decision.REMOVE;
+            Optional<IItemHandler> optional = blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).resolve();
+            if (optional.isEmpty() || !hasRelevantStack(optional.get())) return ActiveHolderSet.Decision.REMOVE;
+            if (!scanBlockEntityInventory(level, blockEntity)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            return hasRelevantStack(optional.get()) ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
+        });
+        return canContinue[0];
+    }
+
+    private boolean scanOnePlacedMaterial(ServerLevel level) {
+        boolean[] canContinue = { true };
+        placedMaterials(level).visit(1, pos -> {
+            if (!level.isLoaded(pos)) return ActiveHolderSet.Decision.REMOVE;
+            PlacedNuclearData data = PlacedNuclearData.get(level);
+            PlacedNuclearData.Entry entry = data.get(pos).orElse(null);
+            if (entry == null) return ActiveHolderSet.Decision.REMOVE;
+            if (!PlacedNuclearResolver.INSTANCE.matches(level.getBlockState(pos), entry)) {
+                data.remove(pos);
+                return ActiveHolderSet.Decision.REMOVE;
+            }
+            long elapsedTicks = Math.max(0L, level.getGameTime() - entry.processedGameTime());
+            if (elapsedTicks <= 0L) return ActiveHolderSet.Decision.KEEP;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            LoadedExposureClock.Window exposure = entry.exposureWindow(elapsedTicks);
+            NuclearSimulationService.StateProcessResult result = NuclearSimulationService.INSTANCE.processPlacedState(
+                level, pos, entry.state(), elapsedTicks / 20.0,
+                NuclearSimulationService.environment(level, pos),
+                NuclearSimulationService.heatStorage(level.getBlockEntity(pos)),
+                net.minecraft.util.RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "placed-state"))
+            );
+            if (result.budgetExhausted()) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            data.put(pos, entry.advance(result.state(), elapsedTicks, level.getGameTime()));
+            return ActiveHolderSet.Decision.KEEP;
+        });
+        return canContinue[0];
+    }
+
+    /** Deterministic live-server proof seam; production scheduling still uses bounded round-robin visits. */
+    public void scanPlacedNow(ServerLevel level, BlockPos pos) {
+        placedMaterials(level).add(pos.immutable());
+        scanOnePlacedMaterial(level);
     }
 
     private static void advectInLava(ServerLevel level, ItemEntity item) {
@@ -146,23 +284,6 @@ public class NuclearSurfaceScanner {
         if (!fluid.is(FluidTags.LAVA)) return;
         item.setDeltaMovement(LavaAdvectionMath.advect(item.getDeltaMovement(), fluid.getFlow(level, pos)));
         item.hurtMarked = true;
-    }
-
-    private void scanBlockInventories(ServerLevel level) {
-        ActiveHolderSet<BlockPos> active = blockInventories(level);
-        int holdersAtStart = active.size();
-        active.visit(holdersAtStart, pos -> {
-            BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
-            if (blockEntity == null) {
-                return ActiveHolderSet.Decision.REMOVE;
-            }
-            Optional<IItemHandler> optional = blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).resolve();
-            if (optional.isEmpty() || !hasRelevantStack(optional.get())) {
-                return ActiveHolderSet.Decision.REMOVE;
-            }
-            if (!scanBlockEntityInventory(level, blockEntity)) return ActiveHolderSet.Decision.STOP;
-            return hasRelevantStack(optional.get()) ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
-        });
     }
 
     private boolean scanBlockEntityInventory(ServerLevel level, BlockEntity blockEntity) {
@@ -207,8 +328,16 @@ public class NuclearSurfaceScanner {
         return activeDroppedItems.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
     }
 
+    private ActiveHolderSet<UUID> players(ServerLevel level) {
+        return activePlayers.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
+    }
+
     private ActiveHolderSet<BlockPos> blockInventories(ServerLevel level) {
         return activeBlockInventories.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
+    }
+
+    private ActiveHolderSet<BlockPos> placedMaterials(ServerLevel level) {
+        return activePlacedMaterials.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
     }
 
     private NuclearSimulationService.ProcessStatus processPlayerStack(ServerLevel level, ServerPlayer player, Inventory inventory, int slot, ItemStack stack, NuclearSimulationService.NuclearEnvironment environment) {

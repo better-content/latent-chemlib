@@ -6,6 +6,7 @@
     { "suffix": "_ingot", "material_units": 1.0 },
     { "suffix": "_plate", "material_units": 1.0 },
     { "suffix": "_dust", "material_units": 1.0 },
+    { "suffix": "_lamp_block", "material_units": 5.0 },
     { "suffix": "_bucket", "material_units": 64.0 }
   ]
 }

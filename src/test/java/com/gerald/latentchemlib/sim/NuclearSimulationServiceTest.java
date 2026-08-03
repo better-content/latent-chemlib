@@ -4,6 +4,8 @@ import net.minecraft.util.RandomSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -80,5 +82,19 @@ class NuclearSimulationServiceTest {
         assertEquals(0, NuclearSurfaceScanner.advanceCursor(0, 0, 4));
         assertEquals(3, NuclearSurfaceScanner.advanceCursor(1, 5, 2));
         assertEquals(1, NuclearSurfaceScanner.advanceCursor(4, 5, 2));
+    }
+
+    @Test
+    void oneOperationBudgetStillRotatesFirstOpportunityAcrossEveryHolderClass() {
+        Set<Integer> visited = new LinkedHashSet<>();
+        int cursor = 0;
+        for (int constrainedRound = 0; constrainedRound < 8; constrainedRound++) {
+            int selected = NuclearSurfaceScanner.surfaceClassAt(cursor, 0);
+            visited.add(selected);
+            cursor = NuclearSurfaceScanner.surfaceClassAfter(selected);
+        }
+
+        assertEquals(Set.of(0, 1, 2, 3), visited);
+        assertEquals(0, cursor);
     }
 }

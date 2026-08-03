@@ -1,7 +1,12 @@
 package com.gerald.latentchemlib.sim;
+import com.gerald.latentchemlib.api.IsotopeEnsemble;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,6 +33,133 @@ class ChemicalStateTest {
         assertEquals(original, loaded);
         assertEquals(ChemicalState.STATE_VERSION, original.save().getInt("state_version"));
         assertEquals(1, original.save().getList("components", Tag.TAG_COMPOUND).size());
+    }
+
+    @Test
+    void v3RoundTripPreservesComponentQualifiedIsotopesWhileV2RemainsUnspecified() {
+        ChemicalState identified = new ChemicalState("chemlib:bismuth", 209.0, 1.0, 293.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:bismuth", 209);
+        ChemicalState loaded = ChemicalState.load(identified.save());
+
+        assertEquals(1.0, loaded.isotopesOf("chemlib:bismuth").fraction(209));
+        CompoundTag v2 = identified.save();
+        v2.remove("component_isotopes");
+        v2.putInt("state_version", 2);
+        assertTrue(ChemicalState.load(v2).explicitIsotopesOf("chemlib:bismuth").isEmpty());
+    }
+
+    @Test
+    void mergeWeightsSameChemicalIsotopesAndSplitPreservesIdentity() {
+        ChemicalState bi209 = new ChemicalState("chemlib:bismuth", 75.0, 1.0, 293.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:bismuth", 209);
+        ChemicalState bi210 = new ChemicalState("chemlib:bismuth", 25.0, 1.0, 293.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:bismuth", 210);
+        ChemicalState mixed = bi209.merge(bi210);
+
+        assertEquals(0.75, mixed.isotopesOf("chemlib:bismuth").fraction(209), 1.0e-6);
+        assertEquals(0.25, mixed.isotopesOf("chemlib:bismuth").fraction(210), 1.0e-6);
+        assertEquals(mixed.isotopesOf("chemlib:bismuth"), mixed.split(40.0).extracted().isotopesOf("chemlib:bismuth"));
+    }
+
+    @Test
+    void partialDecayIdentityRetainsParentAndAddsExplicitDaughter() {
+        ChemicalState before = new ChemicalState("chemlib:bismuth", 100.0, 1.0, 293.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:bismuth", 209);
+        ChemicalState afterMass = new ChemicalState(
+            java.util.Map.of("chemlib:bismuth", 90.0, "chemlib:thallium", 9.8),
+            0.998, 293.0, 0.0, 0.0
+        );
+        ChemicalState after = ChemicalState.withDecayIdentity(
+            before, afterMass, "chemlib:bismuth", 209, 10.0, "chemlib:thallium", 205, 9.8
+        );
+
+        assertEquals(1.0, after.isotopesOf("chemlib:bismuth").fraction(209));
+        assertEquals(1.0, after.isotopesOf("chemlib:thallium").fraction(205));
+    }
+
+    @Test
+    void isotopeConstructorAndVersionedLoaderDiscardInvalidEntries() {
+        Map<String, Double> components = new LinkedHashMap<>();
+        components.put("chemlib:bismuth", 10.0);
+        components.put("chemlib:ignored", null);
+        Map<String, IsotopeEnsemble> isotopes = new LinkedHashMap<>();
+        isotopes.put("chemlib:bismuth", null);
+        isotopes.put("chemlib:ignored", IsotopeEnsemble.pure(210, IsotopeEnsemble.Binding.PERMANENT));
+        isotopes.put("chemlib:natural", IsotopeEnsemble.natural());
+        ChemicalState constructed = new ChemicalState(components, isotopes, 1.0, 293.0, 0.0, 0.0);
+
+        assertTrue(constructed.componentIsotopes().isEmpty());
+        assertTrue(new ChemicalState(components, null, 1.0, 293.0, 0.0, 0.0).componentIsotopes().isEmpty());
+
+        CompoundTag encoded = constructed.save();
+        encoded.remove("temperature");
+        CompoundTag zeroMass = new CompoundTag();
+        zeroMass.putString("id", "chemlib:ignored");
+        zeroMass.putDouble("mass", 0.0);
+        encoded.getList("components", Tag.TAG_COMPOUND).add(zeroMass);
+        CompoundTag naturalIdentity = new CompoundTag();
+        naturalIdentity.putString("id", "chemlib:bismuth");
+        naturalIdentity.put("isotopes", IsotopeEnsemble.natural().save());
+        encoded.put("component_isotopes", new ListTag());
+        encoded.getList("component_isotopes", Tag.TAG_COMPOUND).add(naturalIdentity);
+
+        ChemicalState loaded = ChemicalState.load(encoded);
+        assertEquals(293.0, loaded.temperature());
+        assertEquals(10.0, loaded.mass());
+        assertTrue(loaded.componentIsotopes().isEmpty());
+
+        CompoundTag legacy = new CompoundTag();
+        legacy.putString("chemical_id", "chemlib:bismuth");
+        legacy.putDouble("mass", 10.0);
+        assertEquals(293.0, ChemicalState.load(legacy).temperature());
+    }
+
+    @Test
+    void isotopeMutationBoundsAndNaturalMixingRemainExplicit() {
+        ChemicalState bismuth = new ChemicalState("chemlib:bismuth", 10.0, 1.0, 293.0, 0.0, 0.0);
+        assertSame(bismuth, bismuth.withPureIsotope("chemlib:bismuth", 0));
+        assertSame(bismuth, bismuth.withPureIsotope("chemlib:thorium", 232));
+        assertSame(bismuth, bismuth.merge(null));
+
+        ChemicalState explicit = bismuth.withPureIsotope("chemlib:bismuth", 209);
+        assertTrue(explicit.merge(bismuth).isotopesOf("chemlib:bismuth").isNatural());
+        assertTrue(bismuth.merge(explicit).isotopesOf("chemlib:bismuth").isNatural());
+        assertNotEquals(bismuth, explicit);
+    }
+
+    @Test
+    void decayIdentityHandlesExhaustedNaturalAndMixedParents() {
+        IsotopeEnsemble mixed = IsotopeEnsemble.of(
+            Map.of(209, 1.0, 210, 1.0), IsotopeEnsemble.Binding.PERMANENT
+        );
+        ChemicalState before = new ChemicalState(
+            Map.of("chemlib:bismuth", 100.0, "chemlib:thallium", 20.0),
+            Map.of("chemlib:bismuth", mixed,
+                "chemlib:thallium", IsotopeEnsemble.pure(203, IsotopeEnsemble.Binding.PERMANENT)),
+            1.0, 293.0, 0.0, 0.0
+        );
+        ChemicalState afterMass = new ChemicalState(
+            Map.of("chemlib:bismuth", 50.0, "chemlib:thallium", 69.0),
+            1.0, 293.0, 0.0, 0.0
+        );
+        ChemicalState mixedAfter = ChemicalState.withDecayIdentity(
+            before, afterMass, "chemlib:bismuth", 209, 50.0, "chemlib:thallium", 205, 49.0
+        );
+        assertEquals(1.0, mixedAfter.isotopesOf("chemlib:bismuth").fraction(210));
+        assertTrue(mixedAfter.isotopesOf("chemlib:thallium").fraction(203) > 0.0);
+        assertTrue(mixedAfter.isotopesOf("chemlib:thallium").fraction(205) > 0.0);
+
+        ChemicalState exhausted = ChemicalState.withDecayIdentity(
+            before, new ChemicalState("chemlib:thallium", 118.0, 1.0, 293.0, 0.0, 0.0),
+            "chemlib:bismuth", 209, 100.0, "chemlib:thallium", 205, 98.0
+        );
+        assertTrue(exhausted.explicitIsotopesOf("chemlib:bismuth").isEmpty());
+
+        ChemicalState naturalParent = new ChemicalState("chemlib:bismuth", 10.0, 1.0, 293.0, 0.0, 0.0);
+        ChemicalState absentDaughter = ChemicalState.withDecayIdentity(
+            naturalParent, naturalParent, "chemlib:bismuth", 209, 0.0, "chemlib:thallium", 205, 1.0
+        );
+        assertTrue(absentDaughter.componentIsotopes().isEmpty());
     }
 
     @Test

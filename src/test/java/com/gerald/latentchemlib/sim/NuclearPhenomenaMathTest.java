@@ -55,9 +55,10 @@ class NuclearPhenomenaMathTest {
 
     @Test
     void continuousDecayConvertsConfiguredDaughterAndConservesMassEnergy() {
-        ChemicalState input = new ChemicalState("chemlib:bismuth", 1_000.0, 8.0, 600.0, 0.0, 0.0);
+        ChemicalState input = new ChemicalState("chemlib:bismuth", 1_000.0, 8.0, 600.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:bismuth", 209);
         NuclearDecayRule rule = new NuclearDecayRule(
-            "test:bismuth", "chemlib:bismuth", "chemlib:thallium", "", "Bi-209",
+            "test:bismuth", "chemlib:bismuth", "chemlib:thallium", "", "Bi-209", "Tl-205",
             6.344e26, 0.980861244, 0.0, 0.0, 0.0, 120.0f
         );
 
@@ -71,6 +72,22 @@ class NuclearPhenomenaMathTest {
         assertEquals(input.mass(), result.output().mass() + result.massDefect(), EPSILON);
         assertEquals(result.consumedMass(), result.daughterMass() + result.massDefect(), EPSILON);
         assertEquals(result.massDefect() * 1_000_000.0, result.heatEmission(), 1.0e-3);
+        assertEquals(1.0, result.output().isotopesOf("chemlib:bismuth").fraction(209));
+        assertEquals(1.0, result.output().isotopesOf("chemlib:thallium").fraction(205));
+    }
+
+    @Test
+    void explicitMismatchedIsotopeCannotEnterAnotherIsotopesDecayRule() {
+        ChemicalState polonium218 = new ChemicalState("chemlib:polonium", 218.0, 1.0, 293.0, 0.0, 0.0)
+            .withPureIsotope("chemlib:polonium", 218);
+        NuclearDecayRule polonium209 = new NuclearDecayRule(
+            "test:po209", "chemlib:polonium", "chemlib:lead", "", "Po-209", "Pb-205",
+            10.0, 205.0 / 209.0, 0.0, 0.0, 0.0, 10.0f
+        );
+
+        assertTrue(NuclearPhenomenaMath.continuousDecay(
+            polonium218, polonium209, 1.0, NuclearPhenomenaProfile.defaults()
+        ).isEmpty());
     }
 
     @Test

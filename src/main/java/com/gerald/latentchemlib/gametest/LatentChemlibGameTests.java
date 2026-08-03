@@ -20,11 +20,14 @@ import com.gerald.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.gerald.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.GasFluidCodec;
+import com.gerald.latentchemlib.sim.GasEscapeHandler;
 import com.gerald.latentchemlib.sim.NuclearPhenomenaMath;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
 import com.gerald.latentchemlib.sim.NuclearStackData;
 import com.gerald.latentchemlib.sim.NuclearSurfaceScanner;
 import com.gerald.latentchemlib.sim.RadioactiveFormResolver;
+import com.gerald.latentchemlib.sim.PlacedNuclearData;
+import com.gerald.latentchemlib.sim.PlacedNuclearLifecycle;
 import com.gerald.latentchemlib.sim.SimulationBudget;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
 import com.gerald.latentchemlib.data.LatentDataManager;
@@ -43,6 +46,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
@@ -638,7 +642,7 @@ public final class LatentChemlibGameTests {
                 if (ForgeRegistries.ITEMS.containsKey(candidate)) expected.add(candidate.toString());
             });
         });
-        helper.assertTrue(expected.size() == 78, "The live isotope/form cross-product must contain the audited 78 registrations, got " + expected.size());
+        helper.assertTrue(expected.size() == 79, "The live isotope/form cross-product must contain the audited 79 registrations, got " + expected.size());
         for (String id : expected) {
             ItemStack stack = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse(id)));
             var resolved = RadioactiveFormResolver.INSTANCE.resolve(stack);
@@ -677,6 +681,10 @@ public final class LatentChemlibGameTests {
             helper.assertTrue(state.massOf("chemlib:thallium") > 0.0, "Bismuth dust must continuously form its daughter");
             helper.assertTrue(sink.getHeat() >= 700.0f, "Bi-209 dust must deliver substantial configured decay heat to touching HeatSync material");
             helper.assertTrue(NuclearStackData.isotopes(stored).fraction(209) == 1.0, "Isotope state must remain bound to the material ledger");
+            helper.assertTrue(state.isotopesOf("chemlib:bismuth").fraction(209) == 1.0,
+                "Partial parent matter must remain explicitly Bi-209");
+            helper.assertTrue(state.isotopesOf("chemlib:thallium").fraction(205) == 1.0,
+                "Daughter matter must be explicitly Tl-205 rather than inheriting Bi-209");
             helper.assertTrue(NuclearStackData.provenance(stored).equals("chemlib:bismuth_dust"), "Alternate-form provenance must survive daughter formation");
         });
     }
@@ -699,6 +707,10 @@ public final class LatentChemlibGameTests {
             helper.assertTrue(sink.getHeat() >= 3_500.0f, "Stored sealed cell must deliver substantial configured heat to touching HeatSync material");
             helper.assertTrue(NuclearStackData.isotopes(chest.getItem(0)).fraction(209) == 1.0,
                 "Sealed-cell isotope identity must survive daughter formation");
+            helper.assertTrue(state.isotopesOf("chemlib:bismuth").fraction(209) == 1.0,
+                "Cell parent matter must remain explicitly Bi-209");
+            helper.assertTrue(state.isotopesOf("chemlib:thallium").fraction(205) == 1.0,
+                "Cell daughter matter must be explicitly Tl-205");
             helper.assertTrue(NuclearStackData.provenance(chest.getItem(0)).equals("sealed_cell:chemlib:bismuth"),
                 "Sealed-cell provenance must survive daughter formation");
         });
@@ -771,6 +783,198 @@ public final class LatentChemlibGameTests {
         helper.assertTrue(raw.getTag() == null, "Public stack evaluation must not advance exposure or initialize nuclear NBT");
         // Keep this batch alive through the next scheduler reset so its deliberate exhaustion cannot starve later batches.
         helper.runAfterDelay(21, helper::succeed);
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 40)
+    public static void exactForeignRadioactiveBlocksAndRadonLampCreatePersistentEntries(GameTestHelper helper) {
+        List<String> blockIds = List.of(
+            "chemlib:actinium_metal_block", "chemlib:bismuth_metal_block",
+            "chemlib:francium_metal_block", "chemlib:polonium_metal_block",
+            "chemlib:protactinium_metal_block", "chemlib:radium_metal_block",
+            "chemlib:thorium_metal_block", "chemlib:uranium_metal_block",
+            "chemlib:radon_lamp_block"
+        );
+        for (int index = 0; index < blockIds.size(); index++) {
+            String blockId = blockIds.get(index);
+            Block block = ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(blockId));
+            helper.assertTrue(block != null && block != Blocks.AIR, "Placed nuclear registration must exist: " + blockId);
+            BlockPos relative = new BlockPos(1 + index, 1, 1);
+            helper.setBlock(relative, block);
+            BlockPos absolute = helper.absolutePos(relative);
+            PlacedNuclearData.Entry entry = PlacedNuclearLifecycle.trackPlaced(
+                helper.getLevel(), absolute, new ItemStack(block.asItem())
+            ).orElseThrow(() -> new AssertionError("Placed nuclear form must resolve: " + blockId));
+            helper.assertTrue(entry.state().mass() > 0.0, "Placed entry must contain conserved matter: " + blockId);
+            helper.assertTrue(entry.state().isotopesOf(entry.state().chemicalId()).fraction(entry.isotopeMassNumber()) > 0.0,
+                "Placed entry must initialize canonical isotope identity: " + blockId);
+        }
+        PlacedNuclearData.Entry lamp = PlacedNuclearData.get(helper.getLevel())
+            .get(helper.absolutePos(new BlockPos(9, 1, 1))).orElseThrow();
+        helper.assertTrue(lamp.materialUnits() == 5.0, "Radon lamp must contain its five recipe radon units");
+        for (int index = 0; index < blockIds.size(); index++) {
+            BlockPos absolute = helper.absolutePos(new BlockPos(1 + index, 1, 1));
+            PlacedNuclearData.get(helper.getLevel()).remove(absolute);
+            NuclearSurfaceScanner.unmarkPlaced(helper.getLevel(), absolute);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 80)
+    public static void placedRadioactiveBlockHeatsTouchingHeatSyncMaterialAndRetainsDaughters(GameTestHelper helper) {
+        BlockPos sourcePos = new BlockPos(2, 1, 2);
+        Block block = ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse("chemlib:bismuth_metal_block"));
+        helper.setBlock(sourcePos, block);
+        PlacedNuclearLifecycle.trackPlaced(
+            helper.getLevel(), helper.absolutePos(sourcePos), new ItemStack(block.asItem())
+        ).orElseThrow();
+        LatentMachineBlockEntity sink = placeMachine(helper, sourcePos.east(), LatentChemlibMod.GAS_TANK.get());
+
+        helper.runAfterDelay(20, () -> {
+            NuclearSurfaceScanner.INSTANCE.scanPlacedNow(helper.getLevel(), helper.absolutePos(sourcePos));
+            PlacedNuclearData.Entry entry = PlacedNuclearData.get(helper.getLevel())
+                .get(helper.absolutePos(sourcePos)).orElseThrow();
+            helper.assertTrue(sink.getHeat() > 0.0f, "Placed Bi-209 must deliver substantial decay heat to touching HeatSync material");
+            helper.assertTrue(entry.state().isotopesOf("chemlib:bismuth").fraction(209) == 1.0,
+                "Remaining placed parent must stay Bi-209");
+            helper.assertTrue(entry.state().isotopesOf("chemlib:thallium").fraction(205) == 1.0,
+                "Placed daughter must be explicit Tl-205");
+            PlacedNuclearData.get(helper.getLevel()).remove(helper.absolutePos(sourcePos));
+            NuclearSurfaceScanner.unmarkPlaced(helper.getLevel(), helper.absolutePos(sourcePos));
+            helper.succeed();
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 60)
+    public static void radioactiveRadonBucketEscapesIntoIdentityPreservingCloud(GameTestHelper helper) {
+        ItemStack radonBucket = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:radon_bucket")));
+        var form = RadioactiveFormResolver.INSTANCE.resolve(radonBucket).orElseThrow();
+        ChemicalState radon = NuclearStackData.state(radonBucket, form).withPureIsotope("chemlib:radon", 222);
+        NuclearStackData.setState(radonBucket, radon);
+        NuclearStackData.bindIdentity(radonBucket, "gametest:radon_bucket", 222);
+        radonBucket.getOrCreateTag().putString(NuclearStackData.PROVENANCE_KEY, "gametest:radon_bucket");
+        CompoundTag clock = radonBucket.getOrCreateTag();
+        com.gerald.latentchemlib.sim.LoadedExposureClock.commit(
+            clock, new com.gerald.latentchemlib.sim.LoadedExposureClock.Window(40L, 40L, 99L)
+        );
+        BlockPos origin = helper.absolutePos(new BlockPos(3, 2, 3));
+
+        ItemStack replacement = GasEscapeHandler.INSTANCE.escapeStackNow(radonBucket, helper.getLevel(), origin);
+        helper.assertTrue(replacement.is(Items.BUCKET), "Escaped radon bucket must return exactly one empty bucket");
+        ChemicalCloudBlockEntity cloud = null;
+        for (BlockPos candidate : BlockPos.betweenClosed(origin.offset(-3, -3, -3), origin.offset(3, 3, 3))) {
+            if (helper.getLevel().getBlockEntity(candidate) instanceof ChemicalCloudBlockEntity found
+                && found.chemicalState().massOf("chemlib:radon") > 0.0) {
+                cloud = found;
+                break;
+            }
+        }
+        helper.assertTrue(cloud != null, "Radon bucket must become a native Latent gas cloud");
+        helper.assertTrue(cloud.chemicalState().isotopesOf("chemlib:radon").fraction(222) == 1.0,
+            "Radon cloud must preserve Rn-222 identity");
+        helper.assertTrue(cloud.nuclearProvenance().equals("gametest:radon_bucket"),
+            "Radon cloud must preserve bucket provenance");
+        helper.assertTrue(cloud.loadedExposureTicks() == 40L,
+            "Radon cloud must continue the bucket's loaded-exposure clock");
+        helper.getLevel().removeBlock(cloud.getBlockPos(), false);
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 80)
+    public static void placedNuclearSaveReloadDoesNotReplayElapsedWindow(GameTestHelper helper) {
+        BlockPos relative = new BlockPos(2, 1, 2);
+        BlockPos pos = helper.absolutePos(relative);
+        Block block = ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse("chemlib:bismuth_metal_block"));
+        helper.setBlock(relative, block);
+        PlacedNuclearLifecycle.trackPlaced(helper.getLevel(), pos, new ItemStack(block.asItem())).orElseThrow();
+
+        helper.runAfterDelay(20, () -> {
+            NuclearSurfaceScanner.INSTANCE.scanPlacedNow(helper.getLevel(), pos);
+            PlacedNuclearData data = PlacedNuclearData.get(helper.getLevel());
+            PlacedNuclearData.Entry before = data.get(pos).orElseThrow();
+            PlacedNuclearData.Entry reloaded = PlacedNuclearData.load(data.save(new CompoundTag())).get(pos).orElseThrow();
+            data.put(pos, reloaded);
+            NuclearSurfaceScanner.INSTANCE.scanPlacedNow(helper.getLevel(), pos);
+            PlacedNuclearData.Entry after = data.get(pos).orElseThrow();
+            helper.assertTrue(after.loadedExposureTicks() == before.loadedExposureTicks(),
+                "Reload at the same game time must not replay a processed exposure window");
+            helper.assertTrue(after.state().equals(before.state()),
+                "Reload at the same game time must not duplicate decay, heat, or daughter mass");
+            data.remove(pos);
+            NuclearSurfaceScanner.unmarkPlaced(helper.getLevel(), pos);
+            helper.succeed();
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclearTransfer", timeoutTicks = 80)
+    public static void placedNuclearLootAndReplacementPreserveStateExactly(GameTestHelper helper) {
+        BlockPos relative = new BlockPos(2, 1, 2);
+        BlockPos pos = helper.absolutePos(relative);
+        Block block = ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse("chemlib:bismuth_metal_block"));
+        helper.setBlock(relative, block);
+        PlacedNuclearLifecycle.trackPlaced(helper.getLevel(), pos, new ItemStack(block.asItem())).orElseThrow();
+
+        helper.runAfterDelay(20, () -> {
+            NuclearSurfaceScanner.INSTANCE.scanPlacedNow(helper.getLevel(), pos);
+            PlacedNuclearData.Entry before = PlacedNuclearData.get(helper.getLevel()).get(pos).orElseThrow();
+            List<ItemStack> drops = Block.getDrops(
+                helper.getLevel().getBlockState(pos), helper.getLevel(), pos,
+                helper.getLevel().getBlockEntity(pos), null, ItemStack.EMPTY
+            );
+            ItemStack preserved = drops.stream().filter(stack -> stack.is(block.asItem())).findFirst().orElseThrow();
+            helper.assertTrue(preserved.hasTag() && preserved.getOrCreateTag().contains(NuclearStackData.STATE_KEY),
+                "Global loot modifier must attach placed nuclear state to the native self-drop");
+            helper.assertTrue(PlacedNuclearData.get(helper.getLevel()).get(pos).isEmpty(),
+                "Loot transfer must atomically consume the position sidecar");
+
+            helper.setBlock(relative, block);
+            PlacedNuclearData.Entry replaced = PlacedNuclearLifecycle.trackPlaced(helper.getLevel(), pos, preserved).orElseThrow();
+            helper.assertTrue(replaced.state().equals(before.state()),
+                "Break and replacement must preserve mass, daughter identity, retained heat, and conditions exactly");
+            helper.assertTrue(replaced.loadedExposureTicks() == before.loadedExposureTicks(),
+                "Break and replacement must preserve the exactly-once loaded-exposure clock");
+            PlacedNuclearData.get(helper.getLevel()).remove(pos);
+            NuclearSurfaceScanner.unmarkPlaced(helper.getLevel(), pos);
+            helper.succeed();
+        });
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearDiscrete", timeoutTicks = 40)
+    public static void discreteDaughterConsumesRejectedHeatAndAcceptedHeatIsNotDuplicated(GameTestHelper helper) {
+        var bismuthItem = ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:bismuth"));
+        var thalliumItem = ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:thallium"));
+        NuclearSimulationService.NuclearStackEvent event = new NuclearSimulationService.NuclearStackEvent(
+            "chemlib:thallium", thalliumItem, 1, 1, 120.0f, 1,
+            NuclearSimulationService.NuclearEventType.DECAY, 209, 205
+        );
+
+        ItemStack rejectedInput = new ItemStack(bismuthItem, 2);
+        List<ItemStack> rejectedOutput = new ArrayList<>();
+        var rejectedStatus = NuclearSimulationService.INSTANCE.applyStackEvent(
+            helper.getLevel(), helper.absolutePos(new BlockPos(2, 1, 2)), rejectedInput,
+            event, null, (java.util.function.Consumer<ItemStack>) rejectedOutput::add
+        );
+        helper.assertTrue(rejectedStatus == NuclearSimulationService.ProcessStatus.MUTATED && rejectedInput.getCount() == 1,
+            "Discrete processing must consume exactly one unit from a larger stack");
+        ItemStack daughter = rejectedOutput.get(0);
+        ChemicalState daughterState = ChemicalState.load(daughter.getOrCreateTag().getCompound(NuclearStackData.STATE_KEY));
+        helper.assertTrue(daughterState.energy() == 120.0,
+            "Rejected discrete heat must be durably bound to the daughter state, not an unread side key");
+        helper.assertTrue(daughterState.isotopesOf("chemlib:thallium").fraction(205) == 1.0,
+            "Discrete daughter must carry explicit data-driven Tl-205 identity");
+
+        LatentMachineBlockEntity sink = placeMachine(helper, new BlockPos(5, 1, 2), LatentChemlibMod.GAS_TANK.get());
+        ItemStack acceptedInput = new ItemStack(bismuthItem);
+        List<ItemStack> acceptedOutput = new ArrayList<>();
+        NuclearSimulationService.INSTANCE.applyStackEvent(
+            helper.getLevel(), helper.absolutePos(new BlockPos(5, 1, 2)), acceptedInput,
+            event, sink, (java.util.function.Consumer<ItemStack>) acceptedOutput::add
+        );
+        ChemicalState acceptedState = ChemicalState.load(
+            acceptedOutput.get(0).getOrCreateTag().getCompound(NuclearStackData.STATE_KEY)
+        );
+        helper.assertTrue(sink.getHeat() == 120.0f && acceptedState.energy() == 0.0,
+            "Accepted heat must enter HeatSync exactly once and must not also remain on the daughter");
+        helper.succeed();
     }
 
     private static void assertMachineEntity(GameTestHelper helper, BlockPos pos, Block block) {

@@ -8,6 +8,7 @@ import com.gerald.latentchemlib.sim.ChemicalState;
 import com.gerald.latentchemlib.sim.EmergentMath;
 import com.gerald.latentchemlib.sim.EmergentFusionService;
 import com.gerald.latentchemlib.sim.NuclearSimulationService;
+import com.gerald.latentchemlib.sim.LoadedExposureClock;
 import com.gerald.latentchemlib.sim.SimulationBudget;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
 import com.gerald.latentchemlib.integration.adpother.AdpotherCloudView;
@@ -20,7 +21,6 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.Containers;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -32,6 +32,9 @@ import java.util.List;
 public class ChemicalCloudBlockEntity extends BlockEntity {
     private ChemicalState state = ChemicalState.empty();
     private int age;
+    private String nuclearProvenance = "";
+    private long loadedExposureTicks;
+    private long nuclearSeed;
 
     public ChemicalCloudBlockEntity(BlockPos pos, BlockState blockState) {
         super(LatentChemlibMod.CHEMICAL_CLOUD_ENTITY.get(), pos, blockState);
@@ -46,6 +49,16 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
         syncVisualState();
         setChanged();
     }
+
+    public void bindNuclearIdentity(String provenance, long exposureTicks, long seed) {
+        if (nuclearProvenance.isBlank() && provenance != null) nuclearProvenance = provenance;
+        loadedExposureTicks = Math.max(loadedExposureTicks, Math.max(0L, exposureTicks));
+        if (nuclearSeed == 0L) nuclearSeed = seed;
+        setChanged();
+    }
+
+    public String nuclearProvenance() { return nuclearProvenance; }
+    public long loadedExposureTicks() { return loadedExposureTicks; }
 
     public ChemicalState extractMass(double mass) {
         ChemicalState.Split split = state.split(mass);
@@ -71,6 +84,9 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
         super.load(tag);
         state = ChemicalState.load(tag.getCompound("chemical_state"));
         age = tag.getInt("age");
+        nuclearProvenance = tag.getString("nuclear_provenance");
+        loadedExposureTicks = Math.max(0L, tag.getLong("nuclear_exposure"));
+        nuclearSeed = tag.getLong("nuclear_seed");
     }
 
     @Override
@@ -78,6 +94,9 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
         super.saveAdditional(tag);
         tag.put("chemical_state", state.save());
         tag.putInt("age", age);
+        tag.putString("nuclear_provenance", nuclearProvenance);
+        tag.putLong("nuclear_exposure", loadedExposureTicks);
+        tag.putLong("nuclear_seed", nuclearSeed);
     }
 
     public static void tick(Level level, BlockPos pos, BlockState blockState, ChemicalCloudBlockEntity entity) {
@@ -96,15 +115,19 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
 
         if (EmergentFusionService.INSTANCE.tryFuseAt(serverLevel, pos, entity)) return;
 
-        NuclearSimulationService.StateProcessResult nuclear = NuclearSimulationService.INSTANCE.processChemicalState(
-            serverLevel,
-            pos,
-            entity.state,
-            cadence / 20.0,
-            null,
-            stack -> Containers.dropItemStack(serverLevel, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack)
+        long seed = entity.nuclearSeed == 0L ? serverLevel.getSeed() ^ pos.asLong() : entity.nuclearSeed;
+        LoadedExposureClock.Window exposure = new LoadedExposureClock.Window(
+            entity.loadedExposureTicks, entity.loadedExposureTicks + cadence, seed
+        );
+        NuclearSimulationService.StateProcessResult nuclear = NuclearSimulationService.INSTANCE.processPlacedState(
+            serverLevel, pos, entity.state, cadence / 20.0,
+            NuclearSimulationService.environment(serverLevel, pos),
+            NuclearSimulationService.heatStorage(entity),
+            net.minecraft.util.RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "chemical-cloud"))
         );
         if (nuclear.budgetExhausted()) return;
+        entity.loadedExposureTicks = exposure.endTick();
+        entity.nuclearSeed = seed;
         if (nuclear.mutated()) {
             entity.state = nuclear.state();
             entity.syncVisualState();
@@ -200,6 +223,7 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
             double moved = Math.min(remaining, Math.min(candidate.pressure(), share));
             if (moved <= 0.0) continue;
             targetEntity.seed(extractMass(moved));
+            targetEntity.bindNuclearIdentity(nuclearProvenance, loadedExposureTicks, nuclearSeed);
             remaining -= moved;
         }
     }

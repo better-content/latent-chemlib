@@ -67,7 +67,9 @@ public final class NuclearPhenomenaMath {
         double elapsedSeconds,
         NuclearPhenomenaProfile profile
     ) {
-        double available = input.massOf(rule.inputChemical());
+        double available = input.massOf(rule.inputChemical()) * input.explicitIsotopesOf(rule.inputChemical())
+            .map(ensemble -> ensemble.isNatural() ? 1.0 : ensemble.fraction(rule.isotopeMassNumber()))
+            .orElse(1.0);
         double outputRatio = Math.max(0.0, Math.min(1.0, rule.outputMassRatio()));
         double defectFraction = 1.0 - outputRatio;
         if (available <= 0.0 || elapsedSeconds <= 0.0 || rule.halfLifeSeconds() <= 0.0
@@ -93,6 +95,10 @@ public final class NuclearPhenomenaMath {
             components,
             input.density() * outputMass / input.mass(),
             input.temperature(), input.charge(), input.energy()
+        );
+        output = ChemicalState.withDecayIdentity(
+            input, output, rule.inputChemical(), rule.isotopeMassNumber(), consumed,
+            rule.outputChemical(), rule.daughterIsotopeMassNumber(), daughter
         );
         return Optional.of(new DecayHeatResult(output, consumed, daughter, defect, (float) heat));
     }

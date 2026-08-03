@@ -140,6 +140,21 @@ class NuclearDecayRuleTest {
         assertEquals(0, malformed.isotopeMassNumber());
     }
 
+    @Test
+    void daughterIsotopeUsesExplicitDataAndLegacyMassRatioFallback() {
+        NuclearDecayRule explicit = new NuclearDecayRule(
+            "test", "chemlib:radon", "chemlib:polonium", "", "Rn-222", "Po-218",
+            10.0, 218.0 / 222.0, 0.0, 0.0, 0.0, 0.0f
+        );
+        NuclearDecayRule legacy = new NuclearDecayRule(
+            "test", "chemlib:bismuth", "chemlib:thallium", "", "Bi-209",
+            10.0, 205.0 / 209.0, 0.0, 0.0, 0.0, 0.0f
+        );
+
+        assertEquals(218, explicit.daughterIsotopeMassNumber());
+        assertEquals(205, legacy.daughterIsotopeMassNumber());
+    }
+
     private static NuclearDecayRule rule(double halfLifeSeconds) {
         return new NuclearDecayRule(
             "test",

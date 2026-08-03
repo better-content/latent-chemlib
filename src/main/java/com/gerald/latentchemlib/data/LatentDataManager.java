@@ -335,6 +335,7 @@ public class LatentDataManager implements PreparableReloadListener {
             text(json, "output_chemical", ""),
             text(json, "output_item", ""),
             text(json, "isotope", ""),
+            text(json, "output_isotope", ""),
             number(json, "half_life_seconds", 0.0),
             number(json, "output_mass_ratio", 1.0),
             number(json, "temperature_delta", 0.0),

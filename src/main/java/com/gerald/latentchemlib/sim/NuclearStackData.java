@@ -10,7 +10,6 @@ public final class NuclearStackData {
     public static final String STATE_KEY = "latent_chemlib_nuclear_unit_state";
     public static final String PROVENANCE_KEY = "latent_chemlib_nuclear_provenance";
     public static final String ISOTOPES_KEY = "latent_chemlib_nuclear_isotopes";
-
     private NuclearStackData() {}
 
     public static ChemicalState state(ItemStack stack, RadioactiveFormResolver.ResolvedForm form) {
@@ -24,8 +23,20 @@ public final class NuclearStackData {
 
     public static ChemicalState peekState(ItemStack stack, RadioactiveFormResolver.ResolvedForm form) {
         CompoundTag tag = stack.getTag();
-        if (tag != null && tag.contains(STATE_KEY)) return ChemicalState.load(tag.getCompound(STATE_KEY));
-        return new ChemicalState(form.chemicalId(), form.unitMass(), form.materialUnits(), 293.0, 0.0, 0.0);
+        ChemicalState state = tag != null && tag.contains(STATE_KEY)
+            ? ChemicalState.load(tag.getCompound(STATE_KEY))
+            : new ChemicalState(form.chemicalId(), form.unitMass(), form.materialUnits(), 293.0, 0.0, 0.0);
+        if (state.explicitIsotopesOf(form.chemicalId()).isPresent()) return state;
+        IsotopeEnsemble ensemble = IsotopeItemData.explicit(stack);
+        if (ensemble.isNatural() && tag != null && tag.contains(ISOTOPES_KEY)) {
+            ensemble = IsotopeEnsemble.load(tag.getCompound(ISOTOPES_KEY));
+        }
+        if (ensemble.isNatural()) {
+            ensemble = IsotopeEnsemble.pure(form.isotopeMassNumber(), IsotopeEnsemble.Binding.PERMANENT);
+        }
+        java.util.Map<String, IsotopeEnsemble> identities = new java.util.LinkedHashMap<>(state.componentIsotopes());
+        identities.put(form.chemicalId(), ensemble);
+        return state.withComponentIsotopes(identities);
     }
 
     public static void setState(ItemStack stack, ChemicalState state) {
@@ -40,6 +51,14 @@ public final class NuclearStackData {
             if (ensemble.isNatural()) ensemble = IsotopeEnsemble.pure(isotopeMassNumber, IsotopeEnsemble.Binding.PERMANENT);
             tag.put(ISOTOPES_KEY, ensemble.save());
         }
+    }
+
+    public static void syncIdentity(ItemStack stack, ChemicalState state) {
+        CompoundTag tag = stack.getOrCreateTag();
+        IsotopeEnsemble summary = state.isotopesOf(state.chemicalId());
+        tag.put(ISOTOPES_KEY, summary.save());
+        if (!summary.isNatural()) tag.put(IsotopeItemData.TAG_KEY, summary.save());
+        else tag.remove(IsotopeItemData.TAG_KEY);
     }
 
     public static String provenance(ItemStack stack) {

@@ -9,7 +9,10 @@ import com.gerald.latentchemlib.data.LatentDataManager;
 import com.gerald.latentchemlib.item.ChemicalCellItem;
 import com.gerald.latentchemlib.sim.GasEscapeHandler;
 import com.gerald.latentchemlib.sim.NuclearSurfaceScanner;
+import com.gerald.latentchemlib.sim.PlacedNuclearLifecycle;
+import com.gerald.latentchemlib.sim.PlacedNuclearLootModifier;
 import com.gerald.latentchemlib.sim.SimulationScheduler;
+import com.mojang.serialization.Codec;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
@@ -20,6 +23,7 @@ import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
+import net.minecraftforge.common.loot.IGlobalLootModifier;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
@@ -37,6 +41,10 @@ public class LatentChemlibMod {
     public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID);
     public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, MOD_ID);
+    public static final DeferredRegister<Codec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
+        DeferredRegister.create(ForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
+    public static final RegistryObject<Codec<? extends IGlobalLootModifier>> PLACED_NUCLEAR_LOOT_MODIFIER =
+        LOOT_MODIFIER_SERIALIZERS.register("placed_nuclear_state", () -> PlacedNuclearLootModifier.CODEC);
 
     public static final RegistryObject<Block> CHEMICAL_CLOUD = BLOCKS.register("chemical_cloud", () ->
         new ChemicalCloudBlock(BlockBehaviour.Properties.of()
@@ -79,11 +87,13 @@ public class LatentChemlibMod {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
+        LOOT_MODIFIER_SERIALIZERS.register(modBus);
         modBus.addListener(this::registerCapabilities);
         MinecraftForge.EVENT_BUS.addListener(this::addReloadListeners);
         MinecraftForge.EVENT_BUS.register(SimulationScheduler.INSTANCE);
         MinecraftForge.EVENT_BUS.register(GasEscapeHandler.INSTANCE);
         MinecraftForge.EVENT_BUS.register(NuclearSurfaceScanner.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(PlacedNuclearLifecycle.INSTANCE);
         LOGGER.info("Loaded {}", MOD_ID);
     }
 

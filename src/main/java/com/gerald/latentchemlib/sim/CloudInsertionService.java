@@ -33,7 +33,7 @@ public final class CloudInsertionService {
         for (BlockPos pos : candidates) {
             if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing) {
                 existing.seed(state);
-                return InsertionResult.accepted(state);
+                return InsertionResult.accepted(state, pos);
             }
         }
         for (BlockPos pos : candidates) {
@@ -42,7 +42,7 @@ public final class CloudInsertionService {
             if (!level.setBlock(pos, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3)) continue;
             if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud) {
                 cloud.seed(state);
-                return InsertionResult.accepted(state);
+                return InsertionResult.accepted(state, pos);
             }
         }
         return InsertionResult.rejected(state);
@@ -80,13 +80,13 @@ public final class CloudInsertionService {
         return perUnitState.withMass(perUnitState.mass() * boundedUnits);
     }
 
-    public record InsertionResult(double acceptedMass, double rejectedMass) {
-        static InsertionResult accepted(ChemicalState state) {
-            return new InsertionResult(state.mass(), 0.0);
+    public record InsertionResult(double acceptedMass, double rejectedMass, BlockPos target) {
+        static InsertionResult accepted(ChemicalState state, BlockPos target) {
+            return new InsertionResult(state.mass(), 0.0, target.immutable());
         }
 
         static InsertionResult rejected(ChemicalState state) {
-            return new InsertionResult(0.0, Math.max(0.0, state.mass()));
+            return new InsertionResult(0.0, Math.max(0.0, state.mass()), null);
         }
 
         public boolean acceptedAll() {

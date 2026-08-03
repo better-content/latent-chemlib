@@ -11,6 +11,7 @@ public record NuclearDecayRule(
     String outputChemical,
     String outputItem,
     String isotope,
+    String outputIsotope,
     double halfLifeSeconds,
     double outputMassRatio,
     double temperatureDelta,
@@ -18,10 +19,31 @@ public record NuclearDecayRule(
     double energyDelta,
     float heatEmission
 ) {
+    public NuclearDecayRule(
+        String id, String inputChemical, String outputChemical, String outputItem, String isotope,
+        double halfLifeSeconds, double outputMassRatio, double temperatureDelta, double chargeDelta,
+        double energyDelta, float heatEmission
+    ) {
+        this(id, inputChemical, outputChemical, outputItem, isotope, "", halfLifeSeconds, outputMassRatio,
+            temperatureDelta, chargeDelta, energyDelta, heatEmission);
+    }
+
     public int isotopeMassNumber() {
-        if (isotope == null || isotope.isBlank()) return 0;
-        int separator = isotope.lastIndexOf('-');
-        String value = separator >= 0 ? isotope.substring(separator + 1) : isotope.replaceAll("\\D+", "");
+        return parseMassNumber(isotope);
+    }
+
+    /** Explicit daughter identity, with a migration fallback for older datapacks. */
+    public int daughterIsotopeMassNumber() {
+        int explicit = parseMassNumber(outputIsotope);
+        if (explicit > 0) return explicit;
+        int parent = isotopeMassNumber();
+        return parent <= 0 ? 0 : Math.max(1, (int) Math.round(parent * Math.max(0.0, outputMassRatio)));
+    }
+
+    private static int parseMassNumber(String isotopeName) {
+        if (isotopeName == null || isotopeName.isBlank()) return 0;
+        int separator = isotopeName.lastIndexOf('-');
+        String value = separator >= 0 ? isotopeName.substring(separator + 1) : isotopeName.replaceAll("\\D+", "");
         try {
             return Math.max(0, Integer.parseInt(value));
         } catch (NumberFormatException ignored) {
@@ -30,7 +52,10 @@ public record NuclearDecayRule(
     }
 
     public boolean matches(ChemicalState state) {
-        return halfLifeSeconds > 0.0 && state.massOf(inputChemical) > 0.0;
+        if (halfLifeSeconds <= 0.0 || state.massOf(inputChemical) <= 0.0) return false;
+        return state.explicitIsotopesOf(inputChemical)
+            .map(ensemble -> ensemble.isNatural() || ensemble.fraction(isotopeMassNumber()) > 0.0)
+            .orElse(true);
     }
 
     public double decayProbability(double elapsedSeconds) {
