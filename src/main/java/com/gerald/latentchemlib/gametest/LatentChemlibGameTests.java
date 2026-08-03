@@ -178,7 +178,7 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void chemicalCloudSeedMergeExtractAndRejectsDifferentChemicals(GameTestHelper helper) {
+    public static void chemicalCloudSeedMergeAndExtractPreservesMixtureLedger(GameTestHelper helper) {
         BlockPos pos = new BlockPos(1, 1, 1);
         ChemicalCloudBlockEntity cloud = placeCloud(helper, pos);
         cloud.seed(new ChemicalState("chemlib:hydrogen", 100.0, 1.0, 400.0, 0.2, 20.0));
@@ -189,12 +189,17 @@ public final class LatentChemlibGameTests {
         helper.assertTrue(merged.temperature() == 700.0, "Merged cloud should weight temperature by mass");
 
         cloud.seed(new ChemicalState("chemlib:helium", 1_000.0, 10.0, 100.0, 0.0, 0.0));
-        helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:hydrogen"), "Different chemicals should not overwrite an occupied cloud");
-        helper.assertTrue(cloud.chemicalState().mass() == 400.0, "Rejected chemicals should not alter mass");
+        helper.assertTrue(cloud.chemicalState().massOf("chemlib:hydrogen") == 400.0, "Mixture must retain the original component mass");
+        helper.assertTrue(cloud.chemicalState().massOf("chemlib:helium") == 1_000.0, "Mixture must retain the incoming component mass");
+        helper.assertTrue(cloud.chemicalState().mass() == 1_400.0, "Unlike species must merge without loss");
 
         ChemicalState extracted = cloud.extractMass(150.0);
         helper.assertTrue(extracted.mass() == 150.0, "Extracted cloud state should cap to requested mass");
-        helper.assertTrue(cloud.chemicalState().mass() == 250.0, "Cloud should retain remaining mass after extraction");
+        helper.assertTrue(cloud.chemicalState().mass() == 1_250.0, "Cloud should retain remaining mass after extraction");
+        helper.assertTrue(extracted.massOf("chemlib:hydrogen") + cloud.chemicalState().massOf("chemlib:hydrogen") == 400.0,
+            "Proportional extraction must conserve hydrogen");
+        helper.assertTrue(extracted.massOf("chemlib:helium") + cloud.chemicalState().massOf("chemlib:helium") == 1_000.0,
+            "Proportional extraction must conserve helium");
         helper.succeed();
     }
 
@@ -230,7 +235,7 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasCaptureRejectsAdjacentCloudsWithDifferentChemicals(GameTestHelper helper) {
+    public static void gasCaptureStoresAdjacentChemicalAsMixture(GameTestHelper helper) {
         BlockPos capturePos = new BlockPos(1, 1, 1);
         BlockPos cloudPos = new BlockPos(2, 1, 1);
         LatentMachineBlockEntity capture = placeMachine(helper, capturePos, LatentChemlibMod.GAS_CAPTURE.get());
@@ -239,17 +244,16 @@ public final class LatentChemlibGameTests {
         cloud.seed(new ChemicalState("chemlib:hydrogen", 800.0, 4.0, 600.0, 0.4, 120.0));
 
         helper.runAfterDelay(21, () -> {
-            helper.assertTrue(capture.storedState().chemicalId().equals("chemlib:helium"), "Gas capture should keep its existing chemical when nearby clouds differ");
-            helper.assertTrue(capture.storedState().mass() == 200.0, "Gas capture should not absorb incompatible clouds");
-            helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:hydrogen"), "Rejected clouds should keep their chemical identity");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 650.0,
-                    "Rejected cloud mass should remain mostly conserved across nearby diffusion");
+            helper.assertTrue(capture.storedState().massOf("chemlib:helium") == 200.0, "Capture must retain its existing component");
+            helper.assertTrue(capture.storedState().massOf("chemlib:hydrogen") > 0.0, "Capture must accept a second component into its mixture");
+            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0,
+                    "Mixed capture must mostly conserve aggregate matter");
             helper.succeed();
         });
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasReleaseDoesNotOverwriteDifferentChemicalCloudAbove(GameTestHelper helper) {
+    public static void gasReleaseMergesWithDifferentChemicalCloudAbove(GameTestHelper helper) {
         BlockPos releasePos = new BlockPos(1, 1, 1);
         BlockPos cloudPos = releasePos.above();
         LatentMachineBlockEntity release = placeMachine(helper, releasePos, LatentChemlibMod.GAS_RELEASE.get());
@@ -258,9 +262,10 @@ public final class LatentChemlibGameTests {
         cloud.seed(new ChemicalState("chemlib:hydrogen", 400.0, 4.0, 650.0, 0.3, 160.0));
 
         helper.runAfterDelay(21, () -> {
-            helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:hydrogen"), "Gas release should not overwrite an occupied cloud with a different chemical");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 300.0,
-                    "Occupied mismatched cloud mass should remain mostly conserved across nearby diffusion");
+            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:hydrogen") > 300.0,
+                    "Release must retain matter already present in the cloud field");
+            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:helium") > 0.0,
+                    "Release must merge its component into the occupied cloud field");
             helper.succeed();
         });
     }
@@ -428,6 +433,17 @@ public final class LatentChemlibGameTests {
             BlockEntity blockEntity = helper.getBlockEntity(pos);
             if (blockEntity instanceof ChemicalCloudBlockEntity cloud) {
                 mass += cloud.chemicalState().mass();
+            }
+        }
+        return mass;
+    }
+
+    private static double totalCloudChemicalMass(GameTestHelper helper, BlockPos from, BlockPos to, String chemicalId) {
+        double mass = 0.0;
+        for (BlockPos pos : BlockPos.betweenClosed(from, to)) {
+            BlockEntity blockEntity = helper.getBlockEntity(pos);
+            if (blockEntity instanceof ChemicalCloudBlockEntity cloud) {
+                mass += cloud.chemicalState().massOf(chemicalId);
             }
         }
         return mass;

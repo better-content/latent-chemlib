@@ -60,7 +60,7 @@ class NuclearDecayRuleTest {
 
         assertEquals("chemlib:thorium", out.chemicalId());
         assertEquals(100.0, out.mass());
-        assertEquals(4.0, out.density());
+        assertEquals(2.0, out.density());
         assertEquals(600.0, out.temperature());
         assertEquals(0.0, out.charge());
         assertEquals(0.0, out.energy());

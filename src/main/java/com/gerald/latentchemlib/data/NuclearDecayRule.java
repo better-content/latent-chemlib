@@ -19,7 +19,7 @@ public record NuclearDecayRule(
     float heatEmission
 ) {
     public boolean matches(ChemicalState state) {
-        return halfLifeSeconds > 0.0 && inputChemical.equals(state.chemicalId()) && state.mass() > 0.0;
+        return halfLifeSeconds > 0.0 && state.massOf(inputChemical) > 0.0;
     }
 
     public double decayProbability(double elapsedSeconds) {
@@ -30,11 +30,8 @@ public record NuclearDecayRule(
     }
 
     public ChemicalState apply(ChemicalState state) {
-        String product = outputChemical == null || outputChemical.isBlank() ? state.chemicalId() : outputChemical;
-        return new ChemicalState(
-            product,
-            Math.max(0.0, state.mass() * outputMassRatio),
-            state.density(),
+        String product = outputChemical == null || outputChemical.isBlank() ? inputChemical : outputChemical;
+        return state.transmute(inputChemical, product, outputMassRatio).withConditions(
             Math.max(90.0, state.temperature() + temperatureDelta),
             Math.max(0.0, state.charge() + chargeDelta),
             Math.max(0.0, state.energy() + energyDelta)

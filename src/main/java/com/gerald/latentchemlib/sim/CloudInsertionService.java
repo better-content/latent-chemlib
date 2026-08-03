@@ -31,8 +31,7 @@ public final class CloudInsertionService {
             .toList();
 
         for (BlockPos pos : candidates) {
-            if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing
-                && existing.chemicalState().chemicalId().equals(state.chemicalId())) {
+            if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity existing) {
                 existing.seed(state);
                 return InsertionResult.accepted(state);
             }
@@ -78,14 +77,7 @@ public final class CloudInsertionService {
 
     static ChemicalState scale(ChemicalState perUnitState, int units) {
         int boundedUnits = Math.max(0, units);
-        return new ChemicalState(
-            perUnitState.chemicalId(),
-            perUnitState.mass() * boundedUnits,
-            perUnitState.density() * boundedUnits,
-            perUnitState.temperature(),
-            perUnitState.charge(),
-            perUnitState.energy() * boundedUnits
-        );
+        return perUnitState.withMass(perUnitState.mass() * boundedUnits);
     }
 
     public record InsertionResult(double acceptedMass, double rejectedMass) {

@@ -55,7 +55,7 @@ public class GasFluidStorage implements IFluidHandler {
         Optional<ChemicalState> incoming = GasFluidCodec.stateFromFluid(stack);
         if (incoming.isEmpty()) return false;
         ChemicalState stored = stateGetter.get();
-        return stored.mass() <= 0.0 || stored.chemicalId().equals(incoming.get().chemicalId());
+        return stored.mass() <= 0.0 || (stored.isPure() && stored.chemicalId().equals(incoming.get().chemicalId()));
     }
 
     @Override
@@ -65,7 +65,7 @@ public class GasFluidStorage implements IFluidHandler {
         if (decoded.isEmpty()) return 0;
         ChemicalState stored = stateGetter.get();
         ChemicalState incoming = decoded.get();
-        if (stored.mass() > 0.0 && !stored.chemicalId().equals(incoming.chemicalId())) return 0;
+        if (stored.mass() > 0.0 && (!stored.isPure() || !stored.chemicalId().equals(incoming.chemicalId()))) return 0;
         double remainingCapacityMass = Math.max(
             0.0,
             GasFluidCodec.massForMillibuckets(getTankCapacity(0)) - stored.mass()

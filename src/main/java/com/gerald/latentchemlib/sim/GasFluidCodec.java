@@ -71,7 +71,7 @@ public final class GasFluidCodec {
         CompoundTag tag = stack.getTag();
         if (tag != null && tag.contains(STATE_TAG, CompoundTag.TAG_COMPOUND)) {
             ChemicalState tagged = ChemicalState.load(tag.getCompound(STATE_TAG));
-            if (chemicalId.get().equals(tagged.chemicalId()) && tagged.mass() > 0.0) {
+            if (tagged.isPure() && chemicalId.get().equals(tagged.chemicalId()) && tagged.mass() > 0.0) {
                 return Optional.of(tagged.withMass(mass));
             }
         }
@@ -86,7 +86,9 @@ public final class GasFluidCodec {
     }
 
     public static FluidStack fluidFromState(ChemicalState state, int requestedAmount) {
-        if (state.mass() <= 0.0 || requestedAmount <= 0) return FluidStack.EMPTY;
+        // Forge fluid stacks can name only one fluid. Refuse mixed matter rather
+        // than silently discarding every non-dominant component.
+        if (state.mass() <= 0.0 || !state.isPure() || requestedAmount <= 0) return FluidStack.EMPTY;
         Optional<Fluid> fluid = sourceFluid(state.chemicalId());
         if (fluid.isEmpty()) return FluidStack.EMPTY;
         int amount = Math.min(requestedAmount, millibucketsForMass(state.mass()));

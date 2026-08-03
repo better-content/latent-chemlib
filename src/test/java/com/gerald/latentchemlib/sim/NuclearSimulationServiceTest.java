@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NuclearSimulationServiceTest {
@@ -38,6 +39,7 @@ class NuclearSimulationServiceTest {
         assertTrue(event.isPresent());
         assertEquals(NuclearSimulationService.NuclearEventType.FISSION, event.get().type());
         assertEquals("chemlib:barium", event.get().outputState().chemicalId());
+        assertNull(event.get().outputItem(), "state transformations must not duplicate daughter matter as an item");
     }
 
     @Test
@@ -63,6 +65,20 @@ class NuclearSimulationServiceTest {
         NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(4.0, 0.50, 600.0);
 
         assertEquals(600.0, NuclearSimulationService.INSTANCE.neutronFlux(ChemicalState.empty(), flux));
+    }
+
+    @Test
+    void inducedFissionPreservesNonReactingMixtureComponents() {
+        ChemicalState mixture = new ChemicalState("chemlib:uranium", 1_000.0, 1.0, 293.0, 0.0, 0.0)
+            .merge(new ChemicalState("chemlib:argon", 125.0, 0.5, 293.0, 0.0, 0.0));
+        NuclearSimulationService.NuclearEnvironment flux = new NuclearSimulationService.NuclearEnvironment(0.0, 0.0, 40_000.0);
+
+        var event = NuclearSimulationService.INSTANCE.evaluateState(mixture, 1.0, flux, RandomSource.create(42L));
+
+        assertTrue(event.isPresent());
+        assertEquals(520.0, event.get().outputState().massOf("chemlib:barium"));
+        assertEquals(125.0, event.get().outputState().massOf("chemlib:argon"));
+        assertEquals(645.0, event.get().outputState().mass());
     }
 
     @Test

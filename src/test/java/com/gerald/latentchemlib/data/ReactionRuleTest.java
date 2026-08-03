@@ -53,9 +53,28 @@ class ReactionRuleTest {
         ChemicalState out = rule.apply(new ChemicalState("chemlib:hydrogen", 200.0, 4.0, 500.0, 1.0, 250.0));
         assertEquals("chemlib:helium", out.chemicalId());
         assertEquals(100.0, out.mass());
-        assertEquals(4.0, out.density());
+        assertEquals(2.0, out.density());
         assertEquals(600.0, out.temperature());
         assertEquals(0.0, out.charge());
         assertEquals(0.0, out.energy());
+    }
+
+    @Test
+    void reactionConsumesOnlyItsNamedSpeciesInAMixture() {
+        ReactionRule rule = new ReactionRule(
+            "test", "chemlib:hydrogen", "chemlib:helium", "chemlib:helium",
+            50.0, 293.0, 0.0, 0.0, 0.5,
+            0.0, 0.0, 0.0, 0.0f, 0.0f
+        );
+        ChemicalState mixture = new ChemicalState("chemlib:hydrogen", 100.0, 2.0, 500.0, 0.0, 0.0)
+            .merge(new ChemicalState("chemlib:argon", 30.0, 1.0, 500.0, 0.0, 0.0));
+
+        ChemicalState out = rule.apply(mixture);
+
+        assertTrue(rule.matches(mixture, 0.0f));
+        assertEquals(0.0, out.massOf("chemlib:hydrogen"));
+        assertEquals(50.0, out.massOf("chemlib:helium"));
+        assertEquals(30.0, out.massOf("chemlib:argon"));
+        assertEquals(80.0, out.mass());
     }
 }

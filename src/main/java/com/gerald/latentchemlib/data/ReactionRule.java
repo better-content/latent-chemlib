@@ -22,8 +22,7 @@ public record ReactionRule(
     float heatEmission
 ) {
     public boolean matches(ChemicalState state, float availableHeat) {
-        if (!inputChemical.equals(state.chemicalId())) return false;
-        if (state.mass() < minMass) return false;
+        if (state.massOf(inputChemical) < minMass) return false;
         if (state.temperature() < minTemperature) return false;
         if (state.charge() < minCharge) return false;
         if (state.energy() < minEnergy) return false;
@@ -31,11 +30,8 @@ public record ReactionRule(
     }
 
     public ChemicalState apply(ChemicalState state) {
-        String product = outputChemical == null || outputChemical.isBlank() ? state.chemicalId() : outputChemical;
-        return new ChemicalState(
-            product,
-            Math.max(0.0, state.mass() * outputMassRatio),
-            state.density(),
+        String product = outputChemical == null || outputChemical.isBlank() ? inputChemical : outputChemical;
+        return state.transmute(inputChemical, product, outputMassRatio).withConditions(
             Math.max(90.0, state.temperature() + temperatureDelta),
             Math.max(0.0, state.charge() + chargeDelta),
             Math.max(0.0, state.energy() + energyDelta)

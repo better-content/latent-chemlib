@@ -37,7 +37,7 @@ public final class EmergentMath {
         double nextEnergy = Math.max(0.0, state.energy() - 12.0 - traits.conductivity() * 8.0);
         double nextTemperature = Math.max(90.0, state.temperature() - traits.conductivity() * 3.0);
         double nextCharge = Math.max(0.0, state.charge() - 0.01 * (1.0 + traits.cohesion()));
-        return new ChemicalState(state.chemicalId(), nextMass, nextDensity, nextTemperature, nextCharge, nextEnergy);
+        return state.withMass(nextMass).withPhysicalState(nextDensity, nextTemperature, nextCharge, nextEnergy);
     }
 
     public static boolean shouldDissipate(ChemicalState state, ChemicalTraits traits) {
@@ -76,8 +76,7 @@ public final class EmergentMath {
     public static ChemicalState chamberAgitation(ChemicalState state, MachineProfile profile) {
         if (state.mass() <= 0.0) return state;
         return new ChemicalState(
-            state.chemicalId(),
-            state.mass(),
+            state.components(),
             state.density(),
             state.temperature() + profile.chamberTemperaturePerSecond(),
             Math.min(profile.reactionChamberMaxCharge(), state.charge() + profile.chamberChargePerSecond()),

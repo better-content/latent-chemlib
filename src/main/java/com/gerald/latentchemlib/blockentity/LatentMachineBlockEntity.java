@@ -146,7 +146,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
             BlockEntity neighbor = level.getBlockEntity(worldPosition.relative(direction));
             if (!(neighbor instanceof ChemicalCloudBlockEntity cloud)) continue;
             ChemicalState cloudState = cloud.chemicalState();
-            if (stored.mass() > 0.0 && !stored.chemicalId().equals(cloudState.chemicalId())) continue;
             double amount = MachineTransfer.captureAmount(stored.mass(), cloudState.mass(), machineProfile().machineMassCapacity());
             if (amount <= 0.0) return;
             ChemicalState moved = cloud.extractMass(amount);
@@ -176,11 +175,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
             ReactionRule rule = selected.get();
             heat = Math.min(configuredMaxHeat(), Math.max(0.0f, heat - rule.heatCost() + rule.heatEmission()));
             stored = rule.apply(stored);
-            var item = rule.outputItemValue();
-            if (item != null) {
-                BlockPos target = worldPosition.above();
-                Containers.dropItemStack(level, target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5, new ItemStack(item));
-            }
         }
     }
 

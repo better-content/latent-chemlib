@@ -41,21 +41,28 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
     }
 
     public void seed(ChemicalState incoming) {
-        if (state.mass() <= 0.0 || state.chemicalId().equals(incoming.chemicalId())) {
-            state = state.merge(incoming);
-            syncVisualState();
-            setChanged();
-        }
+        state = state.merge(incoming);
+        syncVisualState();
+        setChanged();
     }
 
     public ChemicalState extractMass(double mass) {
-        double moved = Math.min(Math.max(0.0, mass), state.mass());
-        if (moved <= 0.0) return ChemicalState.empty();
-        ChemicalState extracted = state.withMass(moved);
-        state = state.withMass(state.mass() - moved);
+        ChemicalState.Split split = state.split(mass);
+        ChemicalState extracted = split.extracted();
+        if (extracted.mass() <= 0.0) return ChemicalState.empty();
+        state = split.remainder();
         syncVisualState();
         setChanged();
         return extracted;
+    }
+
+    public ChemicalState extractChemicalMass(String chemicalId, double mass) {
+        ChemicalState.Split split = state.splitChemical(chemicalId, mass);
+        if (split.extracted().mass() <= 0.0) return ChemicalState.empty();
+        state = split.remainder();
+        syncVisualState();
+        setChanged();
+        return split.extracted();
     }
 
     @Override

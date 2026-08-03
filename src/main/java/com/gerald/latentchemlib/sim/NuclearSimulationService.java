@@ -137,7 +137,7 @@ public class NuclearSimulationService {
             if (random.nextDouble() < rule.decayProbability(elapsedSeconds)) {
                 return Optional.of(new NuclearStateEvent(
                     rule.apply(state),
-                    outputStack(rule.outputItemValue(), 1),
+                    null,
                     rule.heatEmission(),
                     radiationFromHeat(rule.heatEmission()),
                     NuclearEventType.DECAY
@@ -175,8 +175,16 @@ public class NuclearSimulationService {
 
     public double neutronFlux(ChemicalState state, NuclearEnvironment environment) {
         if (state.mass() <= 0.0) return Math.max(0.0, environment.externalFlux());
-        ChemicalTraits traits = traits(state.chemicalId());
-        double base = EmergentMath.neutronFlux(state, traits, environment.moderation());
+        double base = 0.0;
+        for (var component : state.components().entrySet()) {
+            ChemicalState componentState = new ChemicalState(
+                component.getKey(), component.getValue(),
+                state.density() * component.getValue() / state.mass(),
+                state.temperature(), state.charge(),
+                state.energy() * component.getValue() / state.mass()
+            );
+            base += EmergentMath.neutronFlux(componentState, traits(component.getKey()), environment.moderation());
+        }
         double absorbed = Math.max(0.0, 1.0 - Math.min(0.95, environment.absorption()));
         return Math.max(0.0, (base + environment.externalFlux()) * absorbed);
     }
@@ -194,11 +202,15 @@ public class NuclearSimulationService {
 
     public boolean isNuclearRelevant(ChemicalState state) {
         if (state.mass() <= 0.0) return false;
-        if (hasDecayRule(state.chemicalId())) return true;
-        if (isConfiguredNuclearItem(state.chemicalId())) return true;
-        ResourceLocation id = ResourceLocation.tryParse(state.chemicalId());
-        Item item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
-        return item instanceof Element element && element.getAtomicNumber() >= 82;
+        for (String chemicalId : state.components().keySet()) {
+            if (hasDecayRule(chemicalId) || isConfiguredNuclearItem(chemicalId)) return true;
+        }
+        for (String chemicalId : state.components().keySet()) {
+            ResourceLocation id = ResourceLocation.tryParse(chemicalId);
+            Item item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
+            if (item instanceof Element element && element.getAtomicNumber() >= 82) return true;
+        }
+        return false;
     }
 
     public boolean canProcessStack(ItemStack stack, NuclearEnvironment environment) {
@@ -257,16 +269,19 @@ public class NuclearSimulationService {
 
     private Optional<NuclearStateEvent> inducedStateEvent(ChemicalState state, NuclearEnvironment environment, RandomSource random) {
         double flux = neutronFlux(state, environment);
-        InducedProduct product = inducedProduct(state.chemicalId(), flux);
+        String reactant = state.components().keySet().stream()
+            .filter(id -> !inducedProduct(id, flux).isEmpty())
+            .findFirst()
+            .orElse(state.chemicalId());
+        InducedProduct product = inducedProduct(reactant, flux);
         if (product.isEmpty()) return Optional.empty();
         double probability = inducedProbability(flux, product.type());
         if (probability <= 0.0 || random.nextDouble() >= probability) return Optional.empty();
         NuclearEventType type = product.type();
         float heat = product.heatEmission() > 0.0f ? product.heatEmission() : type == NuclearEventType.FISSION ? 3_200.0f : 900.0f;
-        ChemicalState output = new ChemicalState(
-            product.chemicalId(),
-            Math.max(0.0, state.mass() * (type == NuclearEventType.FISSION ? 0.52 : 0.995)),
-            state.density(),
+        ChemicalState output = state
+            .transmute(reactant, product.chemicalId(), type == NuclearEventType.FISSION ? 0.52 : 0.995)
+            .withConditions(
             Math.max(90.0, state.temperature() + (type == NuclearEventType.FISSION ? 1800.0 : 450.0)),
             Math.max(0.0, state.charge() + (type == NuclearEventType.FISSION ? 0.35 : 0.08)),
             Math.max(0.0, state.energy() + (type == NuclearEventType.FISSION ? 8_000.0 : 1_200.0))
