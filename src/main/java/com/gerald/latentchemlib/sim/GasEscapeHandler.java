@@ -24,6 +24,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.entity.living.LivingEquipmentChangeEvent;
 import net.minecraftforge.event.entity.player.FillBucketEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.ChunkEvent;
@@ -33,13 +35,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.items.IItemHandlerModifiable;
 import net.minecraftforge.registries.ForgeRegistries;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.UUID;
 import java.util.WeakHashMap;
 
 public class GasEscapeHandler {
@@ -49,36 +49,66 @@ public class GasEscapeHandler {
     private static final double ESCAPED_MIN_DENSITY = 0.03;
     private static final double ESCAPED_ENERGY_PER_ITEM = 6.0;
 
-    private final Map<ServerLevel, Set<LevelChunk>> loadedChunks = new WeakHashMap<>();
+    private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activeBlockInventories = new WeakHashMap<>();
+    private final Map<ServerLevel, ActiveHolderSet<UUID>> activeEntityInventories = new WeakHashMap<>();
 
     @SubscribeEvent
     public void onEntityJoin(EntityJoinLevelEvent event) {
-        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof ItemEntity itemEntity)) return;
-        replaceEscapedStack(itemEntity.getItem(), (ServerLevel) event.getLevel(), itemEntity.blockPosition())
-            .ifPresent(replacement -> {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        Entity entity = event.getEntity();
+        if (entity instanceof ItemEntity itemEntity) {
+            replaceEscapedStack(itemEntity.getItem(), level, itemEntity.blockPosition()).ifPresent(replacement -> {
                 itemEntity.setItem(replacement);
                 if (replacement.isEmpty()) itemEntity.discard();
             });
+            if (itemEntity.isAlive() && escapePayload(itemEntity.getItem()).isPresent()) entityInventories(level).add(itemEntity.getUUID());
+        } else if (entity instanceof Container || hasEscapableHolder(entity)) {
+            entityInventories(level).add(entity.getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public void onEntityLeave(EntityLeaveLevelEvent event) {
+        if (event.getLevel() instanceof ServerLevel level) entityInventories(level).remove(event.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public void onEquipmentChanged(LivingEquipmentChangeEvent event) {
+        if (event.getEntity().level() instanceof ServerLevel level && escapePayload(event.getTo()).isPresent()) {
+            entityInventories(level).add(event.getEntity().getUUID());
+        }
     }
 
     @SubscribeEvent
     public void onChunkLoad(ChunkEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel level && event.getChunk() instanceof LevelChunk chunk) {
-            chunks(level).add(chunk);
             gasifyLegacyFluidBlocks(level, chunk);
+            for (BlockPos pos : chunk.getBlockEntities().keySet()) blockInventories(level).add(pos.immutable());
         }
     }
 
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
-        if (event.getLevel() instanceof ServerLevel level && event.getChunk() instanceof LevelChunk chunk) {
-            chunks(level).remove(chunk);
+        if (event.getLevel() instanceof ServerLevel level) {
+            var unloaded = event.getChunk().getPos();
+            blockInventories(level).removeIf(pos -> new net.minecraft.world.level.ChunkPos(pos).equals(unloaded));
         }
     }
 
     @SubscribeEvent
     public void onLevelUnload(LevelEvent.Unload event) {
-        if (event.getLevel() instanceof ServerLevel level) loadedChunks.remove(level);
+        if (event.getLevel() instanceof ServerLevel level) {
+            activeBlockInventories.remove(level);
+            activeEntityInventories.remove(level);
+        }
+    }
+
+    @SubscribeEvent
+    public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.player.tickCount % 20 != 0
+            || !(event.player instanceof net.minecraft.server.level.ServerPlayer player)
+            || !(player.level() instanceof ServerLevel level)) return;
+        scanContainer(player.getInventory(), player.blockPosition(), level);
     }
 
     @SubscribeEvent
@@ -88,24 +118,32 @@ public class GasEscapeHandler {
             || level.getGameTime() % 20L != 0L) {
             return;
         }
-        for (LevelChunk chunk : Set.copyOf(chunks(level))) {
-            for (BlockEntity blockEntity : List.copyOf(chunk.getBlockEntities().values())) {
-                scanHolder(blockEntity, blockEntity.getBlockPos(), level);
-            }
-        }
-        for (Entity entity : level.getAllEntities()) {
+        blockInventories(level).visit(Integer.MAX_VALUE, pos -> {
+            BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
+            if (blockEntity == null) return ActiveHolderSet.Decision.REMOVE;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            scanHolder(blockEntity, pos, level);
+            return hasEscapableHolder(blockEntity) ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
+        });
+        entityInventories(level).visit(Integer.MAX_VALUE, uuid -> {
+            Entity entity = level.getEntity(uuid);
+            if (entity == null || !entity.isAlive()) return ActiveHolderSet.Decision.REMOVE;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
             if (entity instanceof ItemEntity itemEntity) {
                 replaceEscapedStack(itemEntity.getItem(), level, itemEntity.blockPosition())
                     .ifPresent(replacement -> {
                         itemEntity.setItem(replacement);
                         if (replacement.isEmpty()) itemEntity.discard();
                     });
-            } else if (entity instanceof Player player) {
-                scanContainer(player.getInventory(), player.blockPosition(), level);
+                return itemEntity.isAlive() && escapePayload(itemEntity.getItem()).isPresent()
+                    ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
             } else {
                 scanHolder(entity, entity.blockPosition(), level);
+                // Container entities remain registered because their inventories can mutate without a block hook.
+                return entity instanceof Container || hasEscapableHolder(entity)
+                    ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
             }
-        }
+        });
     }
 
     @SubscribeEvent
@@ -158,6 +196,39 @@ public class GasEscapeHandler {
                 if (handler instanceof IItemHandlerModifiable modifiable) scanItemHandler(modifiable, origin, level);
             });
         }
+    }
+
+    public static void markActive(BlockEntity blockEntity) {
+        if (blockEntity.getLevel() instanceof ServerLevel level) {
+            INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
+        }
+    }
+
+    private boolean hasEscapableHolder(Object holder) {
+        if (holder instanceof Container container) {
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                if (escapePayload(container.getItem(slot)).isPresent()) return true;
+            }
+            return false;
+        }
+        if (holder instanceof BlockEntity blockEntity) {
+            return blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER)
+                .map(this::hasEscapableStack)
+                .orElse(false);
+        }
+        if (holder instanceof Entity entity) {
+            return entity.getCapability(ForgeCapabilities.ITEM_HANDLER)
+                .map(this::hasEscapableStack)
+                .orElse(false);
+        }
+        return false;
+    }
+
+    private boolean hasEscapableStack(net.minecraftforge.items.IItemHandler handler) {
+        for (int slot = 0; slot < handler.getSlots(); slot++) {
+            if (escapePayload(handler.getStackInSlot(slot)).isPresent()) return true;
+        }
+        return false;
     }
 
     private void scanContainer(Container container, BlockPos origin, ServerLevel level) {
@@ -254,11 +325,12 @@ public class GasEscapeHandler {
         return true;
     }
 
-    private Set<LevelChunk> chunks(ServerLevel level) {
-        return loadedChunks.computeIfAbsent(
-            level,
-            ignored -> Collections.newSetFromMap(new IdentityHashMap<>())
-        );
+    private ActiveHolderSet<BlockPos> blockInventories(ServerLevel level) {
+        return activeBlockInventories.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
+    }
+
+    private ActiveHolderSet<UUID> entityInventories(ServerLevel level) {
+        return activeEntityInventories.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
     }
 
     private void gasifyLegacyFluidBlocks(ServerLevel level, LevelChunk chunk) {

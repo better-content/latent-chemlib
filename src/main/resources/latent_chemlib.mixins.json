@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "latent_chemlib.refmap.json",
   "mixins": [
+    "BlockEntityActivityMixin",
     "LiquidBlockGasificationMixin",
     "adpother.ChunkPollutionMixin",
     "adpother.DelayedTileEmissionMixin",

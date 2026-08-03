@@ -1,45 +1,39 @@
 package com.gerald.latentchemlib.sim;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Containers;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.IItemHandlerModifiable;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 
 public class NuclearSurfaceScanner {
     public static final NuclearSurfaceScanner INSTANCE = new NuclearSurfaceScanner();
     private static final int PLAYER_PERIOD_TICKS = 40;
-    private static final int BLOCK_CHUNK_RADIUS = 2;
-    private static final double DROPPED_ITEM_RADIUS = 96.0;
 
-    private final Map<ResourceKey<Level>, Integer> blockChunkCursor = new HashMap<>();
-    private final Map<ResourceKey<Level>, Integer> blockEntityCursor = new HashMap<>();
+    private final Map<ServerLevel, ActiveHolderSet<UUID>> activeDroppedItems = new WeakHashMap<>();
+    private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activeBlockInventories = new WeakHashMap<>();
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
@@ -54,6 +48,45 @@ public class NuclearSurfaceScanner {
         if (!(event.level instanceof ServerLevel level)) return;
         scanDroppedItems(level);
         scanBlockInventories(level);
+    }
+
+    @SubscribeEvent
+    public void onEntityJoin(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level) || !(event.getEntity() instanceof ItemEntity item)) return;
+        if (isRelevant(item.getItem())) droppedItems(level).add(item.getUUID());
+    }
+
+    @SubscribeEvent
+    public void onEntityLeave(EntityLeaveLevelEvent event) {
+        if (event.getLevel() instanceof ServerLevel level && event.getEntity() instanceof ItemEntity item) {
+            droppedItems(level).remove(item.getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public void onChunkLoad(ChunkEvent.Load event) {
+        if (!(event.getLevel() instanceof ServerLevel level) || !(event.getChunk() instanceof LevelChunk chunk)) return;
+        for (BlockPos pos : chunk.getBlockEntities().keySet()) blockInventories(level).add(pos.immutable());
+    }
+
+    @SubscribeEvent
+    public void onChunkUnload(ChunkEvent.Unload event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        ChunkPos unloaded = event.getChunk().getPos();
+        blockInventories(level).removeIf(pos -> new ChunkPos(pos).equals(unloaded));
+    }
+
+    @SubscribeEvent
+    public void onLevelUnload(LevelEvent.Unload event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        activeDroppedItems.remove(level);
+        activeBlockInventories.remove(level);
+    }
+
+    /** Called by the mutation hook; capability inspection is deferred to avoid chunk-load recursion. */
+    public static void markActive(BlockEntity blockEntity) {
+        if (!(blockEntity.getLevel() instanceof ServerLevel level)) return;
+        INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
     }
 
     static int advanceCursor(int cursor, int size, int advanced) {
@@ -76,69 +109,43 @@ public class NuclearSurfaceScanner {
     }
 
     private void scanDroppedItems(ServerLevel level) {
-        Set<UUID> seen = new HashSet<>();
-        for (ServerPlayer player : level.players()) {
-            AABB box = player.getBoundingBox().inflate(DROPPED_ITEM_RADIUS);
-            List<ItemEntity> items = level.getEntities(EntityType.ITEM, box, item -> item.isAlive() && seen.add(item.getUUID()));
-            for (ItemEntity item : items) {
-                ItemStack stack = item.getItem();
-                if (!NuclearSimulationService.INSTANCE.isNuclearRelevant(stack)) continue;
-                if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return;
-                NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
-                    level,
-                    item.blockPosition(),
-                    stack,
-                    1.0,
-                    null,
-                    output -> Containers.dropItemStack(level, item.getX(), item.getY(), item.getZ(), output)
-                );
-                if (stack.isEmpty()) {
-                    item.discard();
-                } else {
-                    item.setItem(stack);
-                }
-                if (status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED) return;
+        ActiveHolderSet<UUID> active = droppedItems(level);
+        active.visit(Integer.MAX_VALUE, uuid -> {
+            if (!(level.getEntity(uuid) instanceof ItemEntity item) || !item.isAlive() || !isRelevant(item.getItem())) {
+                return ActiveHolderSet.Decision.REMOVE;
             }
-        }
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            ItemStack stack = item.getItem();
+            NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
+                level, item.blockPosition(), stack, 1.0, null,
+                output -> Containers.dropItemStack(level, item.getX(), item.getY(), item.getZ(), output)
+            );
+            if (stack.isEmpty()) {
+                item.discard();
+                return ActiveHolderSet.Decision.REMOVE;
+            } else {
+                item.setItem(stack);
+            }
+            return status == NuclearSimulationService.ProcessStatus.BUDGET_EXHAUSTED
+                ? ActiveHolderSet.Decision.STOP
+                : ActiveHolderSet.Decision.KEEP;
+        });
     }
 
     private void scanBlockInventories(ServerLevel level) {
-        List<ChunkPos> chunks = candidateChunks(level);
-        if (chunks.isEmpty()) return;
-        ResourceKey<Level> dimension = level.dimension();
-        int cursor = Math.floorMod(blockChunkCursor.getOrDefault(dimension, 0), chunks.size());
-        int checkedChunks = 0;
-        while (checkedChunks < chunks.size()) {
-            ChunkPos chunkPos = chunks.get(cursor);
-            if (!scanChunkBlockInventories(level, dimension, chunkPos)) {
-                blockChunkCursor.put(dimension, cursor);
-                return;
+        ActiveHolderSet<BlockPos> active = blockInventories(level);
+        active.visit(Integer.MAX_VALUE, pos -> {
+            BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
+            if (blockEntity == null) {
+                return ActiveHolderSet.Decision.REMOVE;
             }
-            checkedChunks++;
-            cursor = advanceCursor(cursor, chunks.size(), 1);
-            blockEntityCursor.put(dimension, 0);
-        }
-        blockChunkCursor.put(dimension, cursor);
-    }
-
-    private boolean scanChunkBlockInventories(ServerLevel level, ResourceKey<Level> dimension, ChunkPos chunkPos) {
-        ChunkAccess access = level.getChunkSource().getChunk(chunkPos.x, chunkPos.z, ChunkStatus.FULL, false);
-        if (!(access instanceof LevelChunk chunk)) return true;
-        List<BlockEntity> blockEntities = new ArrayList<>(chunk.getBlockEntities().values());
-        if (blockEntities.isEmpty()) return true;
-        int cursor = Math.floorMod(blockEntityCursor.getOrDefault(dimension, 0), blockEntities.size());
-        int checked = 0;
-        while (checked < blockEntities.size()) {
-            BlockEntity blockEntity = blockEntities.get(cursor);
-            if (!scanBlockEntityInventory(level, blockEntity)) {
-                blockEntityCursor.put(dimension, cursor);
-                return false;
+            Optional<IItemHandler> optional = blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).resolve();
+            if (optional.isEmpty() || !hasRelevantStack(optional.get())) {
+                return ActiveHolderSet.Decision.REMOVE;
             }
-            checked++;
-            cursor = advanceCursor(cursor, blockEntities.size(), 1);
-        }
-        blockEntityCursor.put(dimension, 0);
-        return true;
+            if (!scanBlockEntityInventory(level, blockEntity)) return ActiveHolderSet.Decision.STOP;
+            return hasRelevantStack(optional.get()) ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
+        });
     }
 
     private boolean scanBlockEntityInventory(ServerLevel level, BlockEntity blockEntity) {
@@ -172,6 +179,19 @@ public class NuclearSurfaceScanner {
             if (NuclearSimulationService.INSTANCE.isNuclearRelevant(stack) || NuclearSimulationService.INSTANCE.hasCaptureProduct(stack)) return true;
         }
         return false;
+    }
+
+    private static boolean isRelevant(ItemStack stack) {
+        return NuclearSimulationService.INSTANCE.isNuclearRelevant(stack)
+            || NuclearSimulationService.INSTANCE.hasCaptureProduct(stack);
+    }
+
+    private ActiveHolderSet<UUID> droppedItems(ServerLevel level) {
+        return activeDroppedItems.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
+    }
+
+    private ActiveHolderSet<BlockPos> blockInventories(ServerLevel level) {
+        return activeBlockInventories.computeIfAbsent(level, ignored -> new ActiveHolderSet<>());
     }
 
     private NuclearSimulationService.ProcessStatus processPlayerStack(ServerLevel level, ServerPlayer player, Inventory inventory, int slot, ItemStack stack, NuclearSimulationService.NuclearEnvironment environment) {
@@ -369,18 +389,4 @@ public class NuclearSurfaceScanner {
         return new ItemStack(event.outputItem(), event.outputCount());
     }
 
-    private static List<ChunkPos> candidateChunks(ServerLevel level) {
-        Set<Long> seen = new HashSet<>();
-        List<ChunkPos> chunks = new ArrayList<>();
-        for (ServerPlayer player : level.players()) {
-            ChunkPos center = player.chunkPosition();
-            for (int dz = -BLOCK_CHUNK_RADIUS; dz <= BLOCK_CHUNK_RADIUS; dz++) {
-                for (int dx = -BLOCK_CHUNK_RADIUS; dx <= BLOCK_CHUNK_RADIUS; dx++) {
-                    ChunkPos chunk = new ChunkPos(center.x + dx, center.z + dz);
-                    if (seen.add(chunk.toLong())) chunks.add(chunk);
-                }
-            }
-        }
-        return chunks;
-    }
 }
