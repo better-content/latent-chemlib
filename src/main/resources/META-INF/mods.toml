@@ -41,7 +41,7 @@ ordering="AFTER"
 side="BOTH"
 
 [[dependencies.${modId}]]
-modId="heatsync"
+modId="heat_sync"
 mandatory=true
 versionRange="[${heatSyncVersion},)"
 ordering="AFTER"

@@ -20,7 +20,7 @@ val flywheelVersion = property("flywheel_version") as String
 val registrateVersion = property("registrate_version") as String
 val chemlibVersion = property("chemlib_version") as String
 val chemlibCurseFileId = property("chemlib_curse_file_id") as String
-val heatSyncVersion = property("heatsync_version") as String
+val heatSyncVersion = property("heat_sync_version") as String
 val emiVersion = property("emi_version") as String
 val emiCurseFileId = property("emi_curse_file_id") as String
 val jeiVersion = property("jei_version") as String
@@ -40,7 +40,7 @@ group = property("mod_group") as String
 version = modVersion
 
 base {
-    archivesName.set(modId)
+    archivesName.set("latent-chemlib")
 }
 
 fun deobf(notation: Any): Any =
@@ -113,7 +113,7 @@ repositories {
     maven("https://maven.blamejared.com")
     flatDir {
         dirs("../heat-sync/build/libs")
-        dirs("../../cache/packwiz-downloads/mods")
+        dirs("../better-content/generated/cache/packwiz-downloads/mods")
     }
 }
 
@@ -139,8 +139,8 @@ dependencies {
     runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     compileOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
     runtimeOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
-    compileOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
-    runtimeOnly(deobf("com.gerald:heatsync:$heatSyncVersion"))
+    compileOnly(deobf("com.bettercontent:heat-sync:$heatSyncVersion"))
+    runtimeOnly(deobf("com.bettercontent:heat-sync:$heatSyncVersion"))
     compileOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
     runtimeOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
     compileOnly(deobf("mezz.jei:jei-$minecraftVersion-common-api:$jeiVersion"))
@@ -238,19 +238,19 @@ tasks.jacocoTestReport {
     classDirectories.setFrom(
         files(
             sourceSets.main.get().output.asFileTree.matching {
-                include("com/gerald/latentchemlib/data/ChemicalTraits.class")
-                include("com/gerald/latentchemlib/data/MachineProfile.class")
-                include("com/gerald/latentchemlib/data/NuclearDecayRule.class")
-                include("com/gerald/latentchemlib/data/NumericCurve.class")
-                include("com/gerald/latentchemlib/data/PresetCurve.class")
-                include("com/gerald/latentchemlib/data/SchedulerProfile.class")
-                include("com/gerald/latentchemlib/sim/ChemicalState.class")
-                include("com/gerald/latentchemlib/sim/ChamberPacingSimulator.class")
-                include("com/gerald/latentchemlib/sim/MachineTransfer.class")
-                include("com/gerald/latentchemlib/sim/ReactionRuleSelector.class")
-                include("com/gerald/latentchemlib/sim/EmergentMath.class")
-                include("com/gerald/latentchemlib/sim/SimulationBudget.class")
-                include("com/gerald/latentchemlib/sim/SimulationBudgetLedger.class")
+                include("com/bettercontent/latentchemlib/data/ChemicalTraits.class")
+                include("com/bettercontent/latentchemlib/data/MachineProfile.class")
+                include("com/bettercontent/latentchemlib/data/NuclearDecayRule.class")
+                include("com/bettercontent/latentchemlib/data/NumericCurve.class")
+                include("com/bettercontent/latentchemlib/data/PresetCurve.class")
+                include("com/bettercontent/latentchemlib/data/SchedulerProfile.class")
+                include("com/bettercontent/latentchemlib/sim/ChemicalState.class")
+                include("com/bettercontent/latentchemlib/sim/ChamberPacingSimulator.class")
+                include("com/bettercontent/latentchemlib/sim/MachineTransfer.class")
+                include("com/bettercontent/latentchemlib/sim/ReactionRuleSelector.class")
+                include("com/bettercontent/latentchemlib/sim/EmergentMath.class")
+                include("com/bettercontent/latentchemlib/sim/SimulationBudget.class")
+                include("com/bettercontent/latentchemlib/sim/SimulationBudgetLedger.class")
             }
         )
     )

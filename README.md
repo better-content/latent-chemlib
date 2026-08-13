@@ -105,3 +105,7 @@ charge, and energy conditioning rates. Machine profiles use the explicit
 ## Community and support
 
 For modpack and mod discussion, playtest feedback, and bug reports, join the [Better Content Discord](https://discord.gg/EkRnZbzqS9).
+
+## Identity
+
+The canonical identity is repository/artifact `latent-chemlib`, mod ID and resource namespace `latent_chemlib`, and Maven group `com.bettercontent`. The Heat Sync dependency now targets `heat_sync`.

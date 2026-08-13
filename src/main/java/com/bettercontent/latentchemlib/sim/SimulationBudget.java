@@ -1,0 +1,13 @@
+package com.bettercontent.latentchemlib.sim;
+
+public enum SimulationBudget {
+    CLOUD_UPDATES,
+    NEIGHBOR_OPS,
+    ESCAPE_SCANS,
+    NUCLEAR_SURFACE_SCANS,
+    NUCLEAR_STACK_EVALUATIONS,
+    NUCLEAR_STATE_EVALUATIONS,
+    NUCLEAR_MUTATIONS,
+    NUCLEAR_RADIATION_EMISSIONS,
+    NUCLEAR_HEAT_EMISSIONS
+}

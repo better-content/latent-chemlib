@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "com.gerald.latentchemlib.mixin",
+  "package": "com.bettercontent.latentchemlib.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "latent_chemlib.refmap.json",
   "mixins": [

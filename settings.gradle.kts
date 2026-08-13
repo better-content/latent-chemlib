@@ -7,4 +7,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "latent_chemlib"
+rootProject.name = "latent-chemlib"
