@@ -302,6 +302,11 @@ public class NuclearSurfaceScanner {
         return scanBlockEntityInventory(level, blockEntity);
     }
 
+    /** Resets one proof holder without disturbing production cursors for any other inventory. */
+    public void resetBlockInventoryCursor(ServerLevel level, BlockEntity blockEntity) {
+        if (blockEntity != null) blockInventorySlotCursors(level).remove(blockEntity.getBlockPos());
+    }
+
     private static void advectInLava(ServerLevel level, ItemEntity item) {
         BlockPos pos = item.blockPosition();
         var fluid = level.getFluidState(pos);

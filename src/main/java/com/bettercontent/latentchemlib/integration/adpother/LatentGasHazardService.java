@@ -28,7 +28,7 @@ public final class LatentGasHazardService {
     private LatentGasHazardService() {}
 
     public Detection detectAround(ServerLevel level, BlockPos center, int radius) {
-        double massInsideRadius = 0.0;
+        int gasCells = 0;
         boolean explosionRisk = false;
         Set<BlockPos> assessed = new HashSet<>();
         int chunkRadius = Math.max(1, (radius + 15) / 16);
@@ -43,7 +43,7 @@ public final class LatentGasHazardService {
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                     if (!(blockEntity instanceof ChemicalCloudBlockEntity cloud)
                         || blockEntity.getBlockPos().distSqr(center) > radiusSquared) continue;
-                    massInsideRadius += cloud.chemicalState().mass();
+                    if (flammableOrGas(cloud).isPresent()) gasCells++;
                     BlockPos pos = blockEntity.getBlockPos();
                     if (assessed.contains(pos) || flammableGas(cloud).isEmpty()) continue;
                     Component component = assess(level, pos);
@@ -52,7 +52,7 @@ public final class LatentGasHazardService {
                 }
             }
         }
-        return new Detection(explosionRisk, GasHazardMath.wholeUnits(massInsideRadius));
+        return new Detection(explosionRisk, gasCells);
     }
 
     public boolean tryIgnite(ServerLevel level, BlockPos seed) {
@@ -93,10 +93,7 @@ public final class LatentGasHazardService {
             if (!(level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity cloud)) continue;
             Optional<AbstractGas> gas = flammableGas(cloud);
             if (gas.isEmpty()) continue;
-            double units = Math.max(
-                0.0,
-                cloud.chemicalState().mass() / CloudInsertionService.MASS_PER_ADPOTHER_UNIT
-            );
+            double units = cloud.pollutantState().units();
             if (units <= 0.0) continue;
             positions.add(pos.immutable());
             contributions.add(new GasHazardMath.Contribution(units, gas.get().getLowerExplosiveLimit()));
@@ -149,10 +146,15 @@ public final class LatentGasHazardService {
     }
 
     private Optional<AbstractGas> flammableGas(ChemicalCloudBlockEntity cloud) {
-        return AdpotherCloudView.INSTANCE.selectorFor(cloud.chemicalState())
+        return flammableOrGas(cloud)
             .filter(AbstractGas.class::isInstance)
             .map(AbstractGas.class::cast)
             .filter(gas -> gas.getLowerExplosiveLimit() > 0);
+    }
+
+    private Optional<com.endertech.minecraft.mods.adpother.blocks.Pollutant<?>> flammableOrGas(ChemicalCloudBlockEntity cloud) {
+        return AdpotherAtmosphereBridge.INSTANCE.pollutantById(cloud.pollutantState().pollutantId())
+            .filter(AbstractGas.class::isInstance);
     }
 
     public record Detection(boolean explosionRisk, int gasBlocks) {}

@@ -242,6 +242,11 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
             ChemicalState cloudState = cloud.chemicalState();
             double amount = MachineTransfer.captureAmount(stored.mass(), cloudState.mass(), machineProfile().machineMassCapacity());
             if (amount <= 0.0) return;
+            amount = Math.min(cloudState.mass(), Math.max(
+                com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT,
+                Math.floor(amount / com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT)
+                    * com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT
+            ));
             ChemicalState moved = cloud.extractMass(amount);
             stored = stored.merge(moved);
             return;
@@ -251,13 +256,9 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     private void release(ServerLevel level) {
         if (stored.mass() <= 0.0) return;
         BlockPos target = worldPosition.above();
-        if (!level.getBlockState(target).isAir() && !level.getBlockState(target).canBeReplaced()) return;
-        if (!(level.getBlockEntity(target) instanceof ChemicalCloudBlockEntity)) {
-            level.setBlock(target, LatentChemlibMod.CHEMICAL_CLOUD.get().defaultBlockState(), 3);
-        }
-        if (level.getBlockEntity(target) instanceof ChemicalCloudBlockEntity cloud) {
-            ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
-            cloud.seed(moved);
+        ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
+        var inserted = com.bettercontent.latentchemlib.sim.CloudInsertionService.INSTANCE.insert(level, target, moved);
+        if (inserted.acceptedAll()) {
             stored = stored.withMass(stored.mass() - moved.mass());
         }
     }

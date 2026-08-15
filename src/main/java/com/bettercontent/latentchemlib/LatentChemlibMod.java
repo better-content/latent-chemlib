@@ -12,6 +12,7 @@ import com.bettercontent.latentchemlib.sim.NuclearSurfaceScanner;
 import com.bettercontent.latentchemlib.sim.PlacedNuclearLifecycle;
 import com.bettercontent.latentchemlib.sim.PlacedNuclearLootModifier;
 import com.bettercontent.latentchemlib.sim.SimulationScheduler;
+import com.bettercontent.latentchemlib.integration.adpother.AdpotherPollutantValidation;
 import com.mojang.serialization.Codec;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.BlockItem;
@@ -94,6 +95,7 @@ public class LatentChemlibMod {
         MinecraftForge.EVENT_BUS.register(GasEscapeHandler.INSTANCE);
         MinecraftForge.EVENT_BUS.register(NuclearSurfaceScanner.INSTANCE);
         MinecraftForge.EVENT_BUS.register(PlacedNuclearLifecycle.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(AdpotherPollutantValidation.INSTANCE);
         LOGGER.info("Loaded {}", MOD_ID);
     }
 

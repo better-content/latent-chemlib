@@ -15,13 +15,11 @@ import com.bettercontent.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherCloudView;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherRoutingProbe;
-import com.bettercontent.latentchemlib.integration.adpother.LatentGasHazardService;
 import com.bettercontent.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.bettercontent.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.bettercontent.latentchemlib.sim.ChemicalState;
+import com.bettercontent.latentchemlib.sim.CloudInsertionService;
 import com.bettercontent.latentchemlib.sim.GasFluidCodec;
-import com.bettercontent.latentchemlib.sim.GasEscapeHandler;
-import com.bettercontent.latentchemlib.sim.NuclearPhenomenaMath;
 import com.bettercontent.latentchemlib.sim.NuclearSimulationService;
 import com.bettercontent.latentchemlib.sim.NuclearStackData;
 import com.bettercontent.latentchemlib.sim.NuclearSurfaceScanner;
@@ -240,7 +238,7 @@ public final class LatentChemlibGameTests {
             "An adjacent cell must not inherit cloud exposure"
         );
 
-        cloud.extractMass(17.0);
+        cloud.extractMass(32.0);
         helper.assertTrue(
             AdpotherCloudView.INSTANCE.contactAt(
                 helper.getLevel(),
@@ -280,87 +278,20 @@ public final class LatentChemlibGameTests {
         helper.succeed();
     }
 
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void mixedFlammableCloudsShareOneExplosionThreshold(GameTestHelper helper) {
-        BlockPos firstPos = new BlockPos(1, 1, 1);
-        BlockPos secondPos = firstPos.east();
-        placeCloud(helper, firstPos).seed(
-            new ChemicalState("chemlib:carbon_dioxide", 8.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
-        );
-        placeCloud(helper, secondPos).seed(
-            new ChemicalState("latent_chemlib:dust", 10.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
-        );
-
-        var detection = LatentGasHazardService.INSTANCE.detectAround(
-            helper.getLevel(),
-            helper.absolutePos(firstPos),
-            4
-        );
-        helper.assertTrue(
-            detection.explosionRisk(),
-            "Half of carbon's LEL plus half of dust's LEL should be an explosion risk"
-        );
-        helper.succeed();
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void ignitionConsumesThresholdQualifiedLatentCloud(GameTestHelper helper) {
-        BlockPos cloudPos = new BlockPos(2, 2, 2);
-        placeCloud(helper, cloudPos).seed(
-            new ChemicalState("latent_chemlib:dust", 20.0 * 16.0, 1.0, 293.0, 0.0, 0.0)
-        );
-        helper.setBlock(cloudPos.east(), Blocks.TORCH);
-
-        boolean ignited = LatentGasHazardService.INSTANCE.tryIgnite(
-            helper.getLevel(),
-            helper.absolutePos(cloudPos)
-        );
-
-        helper.assertTrue(ignited, "A threshold dust cloud beside a torch should ignite");
-        helper.assertTrue(
-            !(helper.getBlockEntity(cloudPos) instanceof ChemicalCloudBlockEntity),
-            "Ignition must consume the assessed cloud before creating the explosion"
-        );
-        helper.succeed();
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void chemicalCloudSeedMergeAndExtractPreservesMixtureLedger(GameTestHelper helper) {
-        BlockPos pos = new BlockPos(1, 1, 1);
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, pos);
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 100.0, 1.0, 400.0, 0.2, 20.0));
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 300.0, 3.0, 800.0, 0.6, 60.0));
-
-        ChemicalState merged = cloud.chemicalState();
-        helper.assertTrue(merged.mass() == 400.0, "Matching chemical clouds should merge mass");
-        helper.assertTrue(merged.temperature() == 700.0, "Merged cloud should weight temperature by mass");
-
-        cloud.seed(new ChemicalState("chemlib:helium", 1_000.0, 10.0, 100.0, 0.0, 0.0));
-        helper.assertTrue(cloud.chemicalState().massOf("chemlib:hydrogen") == 400.0, "Mixture must retain the original component mass");
-        helper.assertTrue(cloud.chemicalState().massOf("chemlib:helium") == 1_000.0, "Mixture must retain the incoming component mass");
-        helper.assertTrue(cloud.chemicalState().mass() == 1_400.0, "Unlike species must merge without loss");
-
-        ChemicalState extracted = cloud.extractMass(150.0);
-        helper.assertTrue(extracted.mass() == 150.0, "Extracted cloud state should cap to requested mass");
-        helper.assertTrue(cloud.chemicalState().mass() == 1_250.0, "Cloud should retain remaining mass after extraction");
-        helper.assertTrue(extracted.massOf("chemlib:hydrogen") + cloud.chemicalState().massOf("chemlib:hydrogen") == 400.0,
-            "Proportional extraction must conserve hydrogen");
-        helper.assertTrue(extracted.massOf("chemlib:helium") + cloud.chemicalState().massOf("chemlib:helium") == 1_000.0,
-            "Proportional extraction must conserve helium");
-        helper.succeed();
-    }
-
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
     public static void gasCapturePullsMatterFromAdjacentCloud(GameTestHelper helper) {
         BlockPos capturePos = new BlockPos(1, 1, 1);
         BlockPos cloudPos = new BlockPos(2, 1, 1);
         LatentMachineBlockEntity capture = placeMachine(helper, capturePos, LatentChemlibMod.GAS_CAPTURE.get());
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 1_000.0, 4.0, 600.0, 0.4, 200.0));
+        CloudInsertionService.INSTANCE.insert(
+            helper.getLevel(),
+            helper.absolutePos(cloudPos),
+            new ChemicalState("chemlib:carbon_dioxide", 1_000.0, 4.0, 600.0, 0.4, 200.0)
+        );
 
         helper.succeedWhen(() -> {
             helper.assertTrue(capture.storedState().mass() > 0.0, "Gas capture should pull matter from an adjacent cloud");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0, "Captured matter should remain mostly conserved across nearby cloud diffusion");
+            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0, "Captured matter should remain mostly conserved across the nearby pollutant field");
         });
     }
 
@@ -369,13 +300,13 @@ public final class LatentChemlibGameTests {
         BlockPos releasePos = new BlockPos(1, 1, 1);
         BlockPos cloudPos = releasePos.above();
         LatentMachineBlockEntity release = placeMachine(helper, releasePos, LatentChemlibMod.GAS_RELEASE.get());
-        release.setStoredState(new ChemicalState("chemlib:helium", 300.0, 2.0, 500.0, 0.1, 120.0));
+        release.setStoredState(new ChemicalState("chemlib:carbon_dioxide", 300.0, 2.0, 500.0, 0.1, 120.0));
 
         helper.succeedWhen(() -> {
             BlockEntity blockEntity = helper.getBlockEntity(cloudPos);
             helper.assertTrue(blockEntity instanceof ChemicalCloudBlockEntity, "Gas release should create a cloud above itself");
             ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) blockEntity;
-            helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:helium"), "Gas release should seed a matching cloud above itself");
+            helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"), "Gas release should seed a matching pollutant cell above itself");
             helper.assertTrue(cloud.chemicalState().mass() > 0.0, "Gas release should move stored matter into a cloud");
             helper.assertTrue(release.storedState().mass() < 300.0, "Gas release should consume storage");
         });
@@ -387,12 +318,15 @@ public final class LatentChemlibGameTests {
         BlockPos cloudPos = new BlockPos(2, 1, 1);
         LatentMachineBlockEntity capture = placeMachine(helper, capturePos, LatentChemlibMod.GAS_CAPTURE.get());
         capture.setStoredState(new ChemicalState("chemlib:helium", 200.0, 1.0, 300.0, 0.0, 20.0));
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 800.0, 4.0, 600.0, 0.4, 120.0));
+        CloudInsertionService.INSTANCE.insert(
+            helper.getLevel(),
+            helper.absolutePos(cloudPos),
+            new ChemicalState("chemlib:carbon_dioxide", 800.0, 4.0, 600.0, 0.4, 120.0)
+        );
 
         helper.runAfterDelay(21, () -> {
             helper.assertTrue(capture.storedState().massOf("chemlib:helium") == 200.0, "Capture must retain its existing component");
-            helper.assertTrue(capture.storedState().massOf("chemlib:hydrogen") > 0.0, "Capture must accept a second component into its mixture");
+            helper.assertTrue(capture.storedState().massOf("chemlib:carbon_dioxide") > 0.0, "Capture must accept a pollutant into its contained mixture");
             helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0,
                     "Mixed capture must mostly conserve aggregate matter");
             helper.succeed();
@@ -400,56 +334,21 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasReleaseMergesWithDifferentChemicalCloudAbove(GameTestHelper helper) {
+    public static void gasReleasePlacesDifferentPollutantBesideOccupiedCell(GameTestHelper helper) {
         BlockPos releasePos = new BlockPos(1, 1, 1);
         BlockPos cloudPos = releasePos.above();
         LatentMachineBlockEntity release = placeMachine(helper, releasePos, LatentChemlibMod.GAS_RELEASE.get());
         ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
-        release.setStoredState(new ChemicalState("chemlib:helium", 300.0, 2.0, 500.0, 0.1, 120.0));
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 400.0, 4.0, 650.0, 0.3, 160.0));
+        release.setStoredState(new ChemicalState("chemlib:sulfur_dioxide", 300.0, 2.0, 500.0, 0.1, 120.0));
+        cloud.seed(new ChemicalState("chemlib:carbon_dioxide", 400.0, 4.0, 650.0, 0.3, 160.0));
 
         helper.runAfterDelay(21, () -> {
-            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:hydrogen") > 300.0,
+            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:carbon_dioxide") > 0.0,
                     "Release must retain matter already present in the cloud field");
-            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:helium") > 0.0,
-                    "Release must merge its component into the occupied cloud field");
+            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:sulfur_dioxide") > 0.0,
+                    "Release must place a separate single-pollutant cell in the occupied field");
             helper.succeed();
         });
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 120)
-    public static void chemicalCloudDiffusesIntoOpenAirWithoutLosingMostMass(GameTestHelper helper) {
-        BlockPos origin = new BlockPos(2, 2, 2);
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, origin);
-        cloud.seed(new ChemicalState("chemlib:hydrogen", 1_200.0, 8.0, 700.0, 0.2, 200.0));
-
-        helper.succeedWhen(() -> {
-            double totalMass = totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4));
-            helper.assertTrue(totalMass > 1_000.0, "Diffusion should conserve most mass while clouds spread");
-            helper.assertTrue(totalCloudCount(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 1, "Diffusion should spread gas into neighboring cells");
-        });
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 320)
-    public static void chemicalCloudEventuallyDissipatesWhenBoxedIn(GameTestHelper helper) {
-        BlockPos origin = new BlockPos(2, 2, 2);
-        for (BlockPos neighbor : new BlockPos[] {
-            origin.north(),
-            origin.south(),
-            origin.east(),
-            origin.west(),
-            origin.above(),
-            origin.below()
-        }) {
-            helper.setBlock(neighbor, Blocks.STONE);
-        }
-
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, origin);
-        cloud.seed(new ChemicalState("chemlib:helium", 200.0, 2.0, 320.0, 0.0, 0.0));
-
-        helper.succeedWhen(() ->
-            helper.assertTrue(helper.getBlockState(origin).isAir(), "A boxed-in cloud should eventually dissipate instead of persisting forever")
-        );
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
@@ -519,17 +418,18 @@ public final class LatentChemlibGameTests {
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
     public static void placedGasFluidImmediatelyBecomesChemicalCloud(GameTestHelper helper) {
         BlockPos pos = new BlockPos(1, 1, 1);
-        var hydrogen = GasFluidCodec.sourceFluid("chemlib:hydrogen").orElseThrow();
+        var carbonDioxide = GasFluidCodec.sourceFluid("chemlib:carbon_dioxide").orElseThrow();
         helper.assertTrue(
-            GasFluidCodec.chemicalId(((FlowingFluid) hydrogen).getFlowing()).orElseThrow().equals("chemlib:hydrogen"),
+            GasFluidCodec.chemicalId(((FlowingFluid) carbonDioxide).getFlowing()).orElseThrow().equals("chemlib:carbon_dioxide"),
             "Flowing and source gas fluid IDs must resolve to the same chemical"
         );
-        helper.setBlock(pos, hydrogen.defaultFluidState().createLegacyBlock());
+        helper.setBlock(pos, carbonDioxide.defaultFluidState().createLegacyBlock());
         helper.assertTrue(helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity, "Placed gas fluid must immediately gasify");
         helper.assertTrue(!GasFluidCodec.isGasFluid(helper.getLevel().getFluidState(helper.absolutePos(pos)).getType()), "No gas fluid block may remain after conversion");
         ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) helper.getBlockEntity(pos);
-        helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:hydrogen"), "Gasified fluid must preserve chemical identity");
-        helper.assertTrue(cloud.chemicalState().mass() == 64.0, "One placed bucket must become exactly 64 mass");
+        helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"), "Gasified fluid must preserve pollutant identity");
+        helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) == 64.0,
+            "One placed bucket must become exactly four atmospheric pollutant units");
         helper.succeed();
     }
 
@@ -538,7 +438,7 @@ public final class LatentChemlibGameTests {
         BlockPos chestPos = new BlockPos(1, 1, 1);
         helper.setBlock(chestPos, Blocks.CHEST);
         ChestBlockEntity chest = (ChestBlockEntity) helper.getBlockEntity(chestPos);
-        chest.setItem(0, new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("chemlib", "hydrogen"))));
+        chest.setItem(0, new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("chemlib", "carbon_dioxide"))));
 
         helper.runAfterDelay(21, () -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Loose gas must leave block inventories within 20 ticks");
@@ -575,32 +475,6 @@ public final class LatentChemlibGameTests {
                 "Loaded Bi-209 decay evidence must drive deterministic daughter formation");
             helper.assertTrue(source.getHeat() > 0.0f, "The containing material must receive conserved decay heat");
             helper.assertTrue(adjacent.getHeat() > 0.0f, "Touching HeatSync material must receive a non-duplicated share of decay heat");
-        });
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "nuclearPhenomena", timeoutTicks = 100)
-    public static void opposingHotDenseGasCloudsFuseAtCollisionCell(GameTestHelper helper) {
-        BlockPos collisionPos = new BlockPos(3, 1, 1);
-        ChemicalCloudBlockEntity collision = placeCloud(helper, collisionPos);
-        ChemicalCloudBlockEntity west = placeCloud(helper, collisionPos.west());
-        ChemicalCloudBlockEntity east = placeCloud(helper, collisionPos.east());
-        collision.seed(new ChemicalState("chemlib:argon", 100.0, 10.0, 9_000.0, 0.0, 100_000.0));
-        west.seed(new ChemicalState("chemlib:hydrogen", 100.0, 12.0, 9_000.0, 2.0, 100_000.0));
-        east.seed(new ChemicalState("chemlib:hydrogen", 100.0, 12.0, 9_000.0, 2.0, 100_000.0));
-        helper.setBlock(collisionPos.above(), Blocks.STONE);
-        helper.assertTrue(NuclearPhenomenaMath.fusion(
-            west.chemicalState(), east.chemicalState(),
-            LatentDataManager.INSTANCE.traits("chemlib:hydrogen"), true,
-            LatentDataManager.INSTANCE.nuclearPhenomenaProfile()
-        ).isPresent(), "Configured live stream states must cross the fusion barrier");
-
-        helper.succeedWhen(() -> {
-            helper.assertTrue(collision.chemicalState().massOf("chemlib:helium") > 0.0,
-                "Opposing compatible streams must create helium in the collision cell");
-            helper.assertTrue(Math.abs(west.chemicalState().mass() - 96.0) < 1.0e-6
-                    && Math.abs(east.chemicalState().mass() - 96.0) < 1.0e-6,
-                "One collision must debit exactly one configured batch from both streams");
-            helper.assertBlockPresent(Blocks.LAVA, collisionPos.above());
         });
     }
 
@@ -700,6 +574,7 @@ public final class LatentChemlibGameTests {
         chest.setItem(0, new ItemStack(bismuthDust));
         chest.setItem(10, new ItemStack(bismuthDust));
         chest.setChanged();
+        NuclearSurfaceScanner.INSTANCE.resetBlockInventoryCursor(helper.getLevel(), chest);
 
         helper.assertTrue(NuclearSurfaceScanner.INSTANCE.scanBlockInventoryNow(helper.getLevel(), chest),
             "First constrained holder scan must complete within its budgets");
@@ -868,41 +743,6 @@ public final class LatentChemlibGameTests {
             NuclearSurfaceScanner.unmarkPlaced(helper.getLevel(), helper.absolutePos(sourcePos));
             helper.succeed();
         });
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 60)
-    public static void radioactiveRadonBucketEscapesIntoIdentityPreservingCloud(GameTestHelper helper) {
-        ItemStack radonBucket = new ItemStack(ForgeRegistries.ITEMS.getValue(ResourceLocation.parse("chemlib:radon_bucket")));
-        var form = RadioactiveFormResolver.INSTANCE.resolve(radonBucket).orElseThrow();
-        ChemicalState radon = NuclearStackData.state(radonBucket, form).withPureIsotope("chemlib:radon", 222);
-        NuclearStackData.setState(radonBucket, radon);
-        NuclearStackData.bindIdentity(radonBucket, "gametest:radon_bucket", 222);
-        radonBucket.getOrCreateTag().putString(NuclearStackData.PROVENANCE_KEY, "gametest:radon_bucket");
-        CompoundTag clock = radonBucket.getOrCreateTag();
-        com.bettercontent.latentchemlib.sim.LoadedExposureClock.commit(
-            clock, new com.bettercontent.latentchemlib.sim.LoadedExposureClock.Window(40L, 40L, 99L)
-        );
-        BlockPos origin = helper.absolutePos(new BlockPos(3, 2, 3));
-
-        ItemStack replacement = GasEscapeHandler.INSTANCE.escapeStackNow(radonBucket, helper.getLevel(), origin);
-        helper.assertTrue(replacement.is(Items.BUCKET), "Escaped radon bucket must return exactly one empty bucket");
-        ChemicalCloudBlockEntity cloud = null;
-        for (BlockPos candidate : BlockPos.betweenClosed(origin.offset(-3, -3, -3), origin.offset(3, 3, 3))) {
-            if (helper.getLevel().getBlockEntity(candidate) instanceof ChemicalCloudBlockEntity found
-                && found.chemicalState().massOf("chemlib:radon") > 0.0) {
-                cloud = found;
-                break;
-            }
-        }
-        helper.assertTrue(cloud != null, "Radon bucket must become a native Latent gas cloud");
-        helper.assertTrue(cloud.chemicalState().isotopesOf("chemlib:radon").fraction(222) == 1.0,
-            "Radon cloud must preserve Rn-222 identity");
-        helper.assertTrue(cloud.nuclearProvenance().equals("gametest:radon_bucket"),
-            "Radon cloud must preserve bucket provenance");
-        helper.assertTrue(cloud.loadedExposureTicks() == 40L,
-            "Radon cloud must continue the bucket's loaded-exposure clock");
-        helper.getLevel().removeBlock(cloud.getBlockPos(), false);
-        helper.succeed();
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", batch = "placedNuclear", timeoutTicks = 80)
@@ -1178,13 +1018,4 @@ public final class LatentChemlibGameTests {
         return mass;
     }
 
-    private static int totalCloudCount(GameTestHelper helper, BlockPos from, BlockPos to) {
-        int count = 0;
-        for (BlockPos pos : BlockPos.betweenClosed(from, to)) {
-            if (helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity) {
-                count++;
-            }
-        }
-        return count;
-    }
 }

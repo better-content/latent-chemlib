@@ -24,26 +24,21 @@ public final class AdpotherCloudView {
     private AdpotherCloudView() {}
 
     public Optional<Pollutant<?>> selectorFor(ChemicalState state) {
-        String id = state.chemicalId();
-        int separator = id.indexOf(':');
-        String path = separator >= 0 ? id.substring(separator + 1) : id;
-        if ("dust".equals(path)) path = "dust";
-        Optional<Pollutant<?>> exact = AdPother.getInstance().pollutants.findByName(path);
-        if (exact.isPresent()) return exact;
-        if ("carbon_dioxide".equals(path)) return AdPother.getInstance().pollutants.findByName("carbon");
-        if ("sulfur_dioxide".equals(path)) return AdPother.getInstance().pollutants.findByName("sulfur");
-        return Optional.empty();
+        return state != null && state.isPure()
+            ? AdpotherAtmosphereBridge.INSTANCE.pollutantFor(state.chemicalId()) : Optional.empty();
     }
 
     public Optional<AbstractGas> gasSelectorAt(ServerLevel level, BlockPos pos) {
-        return loadedCloudAt(level, pos).flatMap(cloud -> selectorFor(cloud.chemicalState())
+        return loadedCloudAt(level, pos).flatMap(cloud ->
+            AdpotherAtmosphereBridge.INSTANCE.pollutantById(cloud.pollutantState().pollutantId())
             .filter(AbstractGas.class::isInstance)
             .map(AbstractGas.class::cast));
     }
 
     public Optional<Contact> contactAt(ServerLevel level, BlockPos pos, Vec3 samplePosition) {
-        return loadedCloudAt(level, pos).flatMap(cloud -> selectorFor(cloud.chemicalState()).flatMap(selector -> {
-            int units = com.bettercontent.latentchemlib.sim.GasHazardMath.wholeUnits(cloud.chemicalState().mass());
+        return loadedCloudAt(level, pos).flatMap(cloud ->
+            AdpotherAtmosphereBridge.INSTANCE.pollutantById(cloud.pollutantState().pollutantId()).flatMap(selector -> {
+            int units = cloud.pollutantState().units();
             if (units <= 0) return Optional.empty();
             float protectedFraction = (float) level.getEntitiesOfClass(
                     PurifiedAir.class,

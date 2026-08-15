@@ -12,15 +12,16 @@ ChemLib registry data.
 
 ## Current Features
 
-- Transparent, walkable `latent_chemlib:chemical_cloud` block entity carrying
-  chemical id, mass, density, temperature, charge, and energy.
+- Transparent, walkable `latent_chemlib:chemical_cloud` cells carrying exactly
+  one registered AdPother pollutant and a bounded whole-unit concentration.
 - AdPother terminal-emission integration that retains its emitters, fuels,
   chimneys, exact selectors, impacts, alarms, respirators, filters, and vacuum
   bags while using Latent clouds as the sole atmospheric gas state.
 - A conserved bridge ratio of 16 Latent mass per AdPother unit. Chimney filters
   run before handoff and vacuum cleanup is accepted only into remediation bags.
   The bridge adds no queue or scheduler mode.
-- Cloud diffusion, cooling, dissipation, and heat-driven block erosion.
+- AdPother-configured atmospheric movement, dissipation, impacts, protection,
+  detection, cleanup, and explosive behavior over Latent-owned cells.
 - Gas item escape handling for item entities and player inventories.
 - Heavy element neutron flux simulation for ChemLib element stacks.
 - Create-style machine blocks:
@@ -101,6 +102,10 @@ charge, and energy conditioning rates. Machine profiles use the explicit
 - The mod currently provides the simulation foundation and block/item registry.
   Pack-specific recipes, progression gates, and datapack tuning live in the
   consuming pack.
+- Complex mixtures, temperature, charge, reaction, and nuclear state remain
+  contained in machines and items; ambient cells deliberately do not retain
+  those properties. Atmospheric conversion uses 16 Latent mass per whole
+  AdPother unit and discards sub-unit release remainder.
 
 ## Community and support
 
