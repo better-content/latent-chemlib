@@ -111,7 +111,7 @@ repositories {
     }
     maven("https://maven.blamejared.com")
     flatDir {
-        dirs("../better-content/generated/cache/packwiz-downloads/mods")
+        dirs("../../better-content/generated/cache/packwiz-downloads/mods")
     }
 }
 
