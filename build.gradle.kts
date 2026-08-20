@@ -24,7 +24,6 @@ val emiVersion = property("emi_version") as String
 val emiCurseFileId = property("emi_curse_file_id") as String
 val jeiVersion = property("jei_version") as String
 val adpotherVersion = property("adpother_version") as String
-val adchimneysVersion = property("adchimneys_version") as String
 val forgeEndertechVersion = property("forgeendertech_version") as String
 val pneumaticCraftVersion = property("pneumaticcraft_version") as String
 val modId = property("mod_id") as String
@@ -131,8 +130,6 @@ dependencies {
     implementation(deobf("curse.maven:chemlib-340666:$chemlibCurseFileId"))
     compileOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2132"))
     runtimeOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2132"))
-    compileOnly(deobf("local:AdChimneys:1.20.1-$adchimneysVersion-build.1944"))
-    runtimeOnly(deobf("local:AdChimneys:1.20.1-$adchimneysVersion-build.1944"))
     compileOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     compileOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
@@ -157,7 +154,6 @@ tasks.processResources {
         "emiVersion" to emiVersion,
         "jeiVersion" to jeiVersion,
         "adpotherVersion" to adpotherVersion,
-        "adchimneysVersion" to adchimneysVersion,
         "pneumaticCraftVersion" to pneumaticCraftVersion,
         "modId" to modId,
         "modName" to modName,

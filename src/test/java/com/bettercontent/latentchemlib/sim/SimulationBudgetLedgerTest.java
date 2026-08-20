@@ -6,8 +6,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SimulationBudgetLedgerTest {
     @Test
@@ -29,7 +27,7 @@ class SimulationBudgetLedgerTest {
 
     @Test
     void limitsMapEveryBudgetToTheConfiguredProfile() {
-        assertEquals(2, SimulationBudgetLedger.limit(SimulationBudget.CLOUD_UPDATES, profile));
+        assertEquals(2, SimulationBudgetLedger.limit(SimulationBudget.MACHINE_UPDATES, profile));
         assertEquals(3, SimulationBudgetLedger.limit(SimulationBudget.NEIGHBOR_OPS, profile));
         assertEquals(4, SimulationBudgetLedger.limit(SimulationBudget.ESCAPE_SCANS, profile));
         assertEquals(5, SimulationBudgetLedger.limit(SimulationBudget.NUCLEAR_SURFACE_SCANS, profile));
@@ -43,13 +41,13 @@ class SimulationBudgetLedgerTest {
     @Test
     void spendingTracksPerKeyAndRejectsOverspend() {
         SimulationBudgetLedger<String> ledger = new SimulationBudgetLedger<>();
-        assertTrue(ledger.trySpend("overworld", SimulationBudget.CLOUD_UPDATES, 1, profile));
-        assertTrue(ledger.trySpend("overworld", SimulationBudget.CLOUD_UPDATES, 1, profile));
-        assertFalse(ledger.trySpend("overworld", SimulationBudget.CLOUD_UPDATES, 1, profile));
-        assertEquals(2, ledger.spent("overworld", SimulationBudget.CLOUD_UPDATES));
+        assertTrue(ledger.trySpend("overworld", SimulationBudget.MACHINE_UPDATES, 1, profile));
+        assertTrue(ledger.trySpend("overworld", SimulationBudget.MACHINE_UPDATES, 1, profile));
+        assertFalse(ledger.trySpend("overworld", SimulationBudget.MACHINE_UPDATES, 1, profile));
+        assertEquals(2, ledger.spent("overworld", SimulationBudget.MACHINE_UPDATES));
 
-        assertTrue(ledger.trySpend("nether", SimulationBudget.CLOUD_UPDATES, 2, profile));
-        assertEquals(2, ledger.spent("nether", SimulationBudget.CLOUD_UPDATES));
+        assertTrue(ledger.trySpend("nether", SimulationBudget.MACHINE_UPDATES, 2, profile));
+        assertEquals(2, ledger.spent("nether", SimulationBudget.MACHINE_UPDATES));
     }
 
     @Test
@@ -77,7 +75,7 @@ class SimulationBudgetLedgerTest {
     @Test
     void defaultSchedulerProfileKeepsExpectedConservativeBudgets() {
         SchedulerProfile defaults = SchedulerProfile.defaults();
-        assertEquals(256, defaults.cloudUpdatesPerSecond());
+        assertEquals(256, defaults.machineUpdatesPerSecond());
         assertEquals(768, defaults.neighborOpsPerSecond());
         assertEquals(64, defaults.escapeScansPerSecond());
         assertEquals(512, defaults.nuclearSurfaceScansPerSecond());

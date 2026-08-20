@@ -7,16 +7,7 @@
   "mixins": [
     "BlockEntityActivityMixin",
     "LiquidBlockGasificationMixin",
-    "RadioactiveItemEntityMixin",
-    "adpother.ChunkPollutionMixin",
-    "adpother.DelayedTileEmissionMixin",
-    "adpother.EntityPollutionMixin",
-    "adpother.GasDetectionMixin",
-    "adpother.GasExplosionMixin",
-    "adpother.PointPollutionMixin",
-    "adpother.PollutantMixin",
-    "adpother.VacuumBlockSuckInMixin",
-    "adpother.WorldDataMixin"
+    "RadioactiveItemEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

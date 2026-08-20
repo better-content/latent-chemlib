@@ -18,6 +18,7 @@ import com.bettercontent.latentchemlib.sim.SimulationBudget;
 import com.bettercontent.latentchemlib.sim.SimulationScheduler;
 import com.bettercontent.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.bettercontent.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
+import com.bettercontent.latentchemlib.integration.adpother.AdpotherGasBoundary;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -144,7 +145,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatReceive
             entity.balanceChemicalNeighbor(serverLevel);
         }
         if (serverLevel.getGameTime() % 20L != 0L) return;
-        if (!SimulationScheduler.INSTANCE.trySpend(serverLevel, SimulationBudget.CLOUD_UPDATES, 1)) return;
+        if (!SimulationScheduler.INSTANCE.trySpend(serverLevel, SimulationBudget.MACHINE_UPDATES, 1)) return;
         NuclearSimulationService.StateProcessResult nuclear = NuclearSimulationService.INSTANCE.processChemicalState(
             serverLevel,
             pos,
@@ -229,17 +230,18 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatReceive
 
     private void capture(ServerLevel level) {
         for (Direction direction : Direction.values()) {
-            BlockEntity neighbor = level.getBlockEntity(worldPosition.relative(direction));
-            if (!(neighbor instanceof ChemicalCloudBlockEntity cloud)) continue;
-            ChemicalState cloudState = cloud.chemicalState();
-            double amount = MachineTransfer.captureAmount(stored.mass(), cloudState.mass(), machineProfile().machineMassCapacity());
+            BlockPos target = worldPosition.relative(direction);
+            BlockState targetState = level.getBlockState(target);
+            if (!(targetState.getBlock() instanceof com.endertech.minecraft.mods.adpother.blocks.Pollutant<?> pollutant)) continue;
+            double availableMass = pollutant.getCarriedPollutionAmount(targetState)
+                * AdpotherGasBoundary.MASS_PER_ADPOTHER_UNIT;
+            double amount = MachineTransfer.captureAmount(stored.mass(), availableMass, machineProfile().machineMassCapacity());
             if (amount <= 0.0) return;
-            amount = Math.min(cloudState.mass(), Math.max(
-                com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT,
-                Math.floor(amount / com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT)
-                    * com.bettercontent.latentchemlib.sim.CloudInsertionService.MASS_PER_ADPOTHER_UNIT
-            ));
-            ChemicalState moved = cloud.extractMass(amount);
+            int units = Math.min(
+                pollutant.getCarriedPollutionAmount(targetState),
+                Math.max(1, (int) Math.floor(amount / AdpotherGasBoundary.MASS_PER_ADPOTHER_UNIT))
+            );
+            ChemicalState moved = AdpotherGasBoundary.INSTANCE.capture(level, target, units);
             stored = stored.merge(moved);
             return;
         }
@@ -249,7 +251,7 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatReceive
         if (stored.mass() <= 0.0) return;
         BlockPos target = worldPosition.above();
         ChemicalState moved = stored.withMass(Math.min(MachineTransfer.TRANSFER_MASS, stored.mass()));
-        var inserted = com.bettercontent.latentchemlib.sim.CloudInsertionService.INSTANCE.insert(level, target, moved);
+        var inserted = AdpotherGasBoundary.INSTANCE.release(level, target, moved);
         if (inserted.acceptedAll()) {
             stored = stored.withMass(stored.mass() - moved.mass());
         }

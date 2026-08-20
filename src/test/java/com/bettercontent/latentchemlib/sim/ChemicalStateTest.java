@@ -337,28 +337,15 @@ class ChemicalStateTest {
     }
 
     @Test
-    void ambientEvolutionCannotCollapseAMixtureToItsDominantSpecies() {
+    void chamberAgitationCannotCollapseAMixtureToItsDominantSpecies() {
         ChemicalState mixture = new ChemicalState("chemlib:hydrogen", 100.0, 2.0, 700.0, 0.2, 100.0)
             .merge(new ChemicalState("chemlib:helium", 50.0, 1.0, 700.0, 0.2, 50.0));
 
-        ChemicalState settled = EmergentMath.coolAndSettle(mixture, com.bettercontent.latentchemlib.data.ChemicalTraits.fallback());
         ChemicalState agitated = EmergentMath.chamberAgitation(mixture, com.bettercontent.latentchemlib.data.MachineProfile.defaults());
 
-        assertEquals(2, settled.components().size());
         assertEquals(2, agitated.components().size());
-        assertEquals(settled.mass(), settled.massOf("chemlib:hydrogen") + settled.massOf("chemlib:helium"));
         assertEquals(mixture.massOf("chemlib:hydrogen"), agitated.massOf("chemlib:hydrogen"));
         assertEquals(mixture.massOf("chemlib:helium"), agitated.massOf("chemlib:helium"));
     }
 
-    @Test
-    void cloudDiffusionTierBecomesMoreTransparentAsDensityFalls() {
-        assertEquals(0, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 3.0, 293.0, 0.0, 0.0)));
-        assertEquals(1, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 2.0, 293.0, 0.0, 0.0)));
-        assertEquals(2, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 0.5, 293.0, 0.0, 0.0)));
-        assertEquals(3, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 0.1, 293.0, 0.0, 0.0)));
-        assertEquals(2, ChemicalCloudVisuals.diffusionTier(1, 3));
-        assertEquals(1, ChemicalCloudVisuals.diffusionTier(2, 3));
-        assertEquals(0, ChemicalCloudVisuals.diffusionTier(3, 3));
-    }
 }

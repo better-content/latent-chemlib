@@ -111,7 +111,7 @@ public class LatentDataManager implements PreparableReloadListener {
             try (var reader = entry.getValue().openAsReader()) {
                 JsonObject json = GSON.fromJson(reader, JsonObject.class);
                 profile = new SchedulerProfile(
-                    integer(json, "cloud_updates_per_second", profile.cloudUpdatesPerSecond()),
+                    integer(json, "machine_updates_per_second", profile.machineUpdatesPerSecond()),
                     integer(json, "neighbor_ops_per_second", profile.neighborOpsPerSecond()),
                     integer(json, "escape_scans_per_second", profile.escapeScansPerSecond()),
                     integer(json, "nuclear_surface_scans_per_second", integer(json, "nuclear_inventory_scans_per_second", profile.nuclearSurfaceScansPerSecond())),

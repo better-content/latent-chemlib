@@ -5,22 +5,13 @@ import com.bettercontent.latentchemlib.api.LatentCapabilities;
 import com.mojang.authlib.GameProfile;
 import com.endertech.minecraft.mods.adpother.AdPother;
 import com.endertech.minecraft.mods.adpother.blocks.Pollutant;
-import com.endertech.minecraft.mods.adchimneys.AdChimneys;
-import com.endertech.minecraft.mods.adchimneys.blocks.Chimney;
-import com.endertech.minecraft.mods.adchimneys.blocks.Pipe;
-import com.endertech.minecraft.mods.adchimneys.blocks.Pump;
-import com.endertech.minecraft.mods.adchimneys.blocks.Vent;
-import com.bettercontent.latentchemlib.blockentity.ChemicalCloudBlockEntity;
+import com.endertech.minecraft.forge.world.BiomeId;
 import com.bettercontent.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
-import com.bettercontent.latentchemlib.integration.adpother.AdpotherCloudView;
-import com.bettercontent.latentchemlib.integration.adpother.AdpotherRoutingProbe;
-import com.bettercontent.latentchemlib.integration.adpother.LatentGasHazardService;
+import com.bettercontent.latentchemlib.integration.adpother.AdpotherGasBoundary;
 import com.bettercontent.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.bettercontent.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.bettercontent.latentchemlib.sim.ChemicalState;
-import com.bettercontent.latentchemlib.sim.CloudInsertionService;
-import com.bettercontent.latentchemlib.sim.ChemicalCloudVisuals;
 import com.bettercontent.latentchemlib.sim.GasFluidCodec;
 import com.bettercontent.latentchemlib.sim.NuclearSimulationService;
 import com.bettercontent.latentchemlib.sim.NuclearStackData;
@@ -41,8 +32,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.item.Item;
@@ -71,16 +60,12 @@ public final class LatentChemlibGameTests {
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
     public static void registeredBlocksCreateExpectedBlockEntities(GameTestHelper helper) {
-        BlockPos cloudPos = new BlockPos(1, 1, 1);
-        helper.setBlock(cloudPos, LatentChemlibMod.CHEMICAL_CLOUD.get());
-        helper.assertTrue(helper.getBlockEntity(cloudPos) instanceof ChemicalCloudBlockEntity, "Chemical cloud should create its block entity");
-
-        assertMachineEntity(helper, new BlockPos(2, 1, 1), LatentChemlibMod.GAS_CAPTURE.get());
-        assertMachineEntity(helper, new BlockPos(3, 1, 1), LatentChemlibMod.GAS_TANK.get());
-        assertMachineEntity(helper, new BlockPos(4, 1, 1), LatentChemlibMod.GAS_REACTION_CHAMBER.get());
-        assertMachineEntity(helper, new BlockPos(5, 1, 1), LatentChemlibMod.GAS_RELEASE.get());
-        assertMachineEntity(helper, new BlockPos(6, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get());
-        assertMachineEntity(helper, new BlockPos(7, 1, 1), LatentChemlibMod.DRY_AIR_SEPARATOR.get());
+        assertMachineEntity(helper, new BlockPos(1, 1, 1), LatentChemlibMod.GAS_CAPTURE.get());
+        assertMachineEntity(helper, new BlockPos(2, 1, 1), LatentChemlibMod.GAS_TANK.get());
+        assertMachineEntity(helper, new BlockPos(3, 1, 1), LatentChemlibMod.GAS_REACTION_CHAMBER.get());
+        assertMachineEntity(helper, new BlockPos(4, 1, 1), LatentChemlibMod.GAS_RELEASE.get());
+        assertMachineEntity(helper, new BlockPos(5, 1, 1), LatentChemlibMod.PNEUMATIC_CHEMICAL_TUBE.get());
+        assertMachineEntity(helper, new BlockPos(6, 1, 1), LatentChemlibMod.DRY_AIR_SEPARATOR.get());
         helper.succeed();
     }
 
@@ -173,219 +158,102 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void adpotherEmissionCreatesLatentCloudInsteadOfAdpotherGas(GameTestHelper helper) {
+    public static void adpotherEmissionCreatesNativePollutantBlock(GameTestHelper helper) {
         BlockPos pos = new BlockPos(1, 1, 1);
         Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon")
             .orElseThrow(() -> new AssertionError("AdPother carbon selector must be registered"));
 
         int emitted = carbon.generateAt(helper.getLevel(), helper.absolutePos(pos), 2, 1);
 
-        helper.assertTrue(emitted == 2, "AdPother should report both units accepted by Latent");
-        helper.assertTrue(
-            helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity,
-            "AdPother emission should create the Latent chemical cloud block entity"
-        );
-        ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) helper.getBlockEntity(pos);
-        helper.assertTrue(
-            cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"),
-            "Legacy carbon emissions should bridge to ChemLib carbon dioxide"
-        );
-        helper.assertTrue(cloud.chemicalState().mass() == 32.0, "Two AdPother units should equal 32 Latent mass");
-        helper.assertTrue(
-            helper.getBlockState(pos).getValue(com.bettercontent.latentchemlib.block.ChemicalCloudBlock.DIFFUSION)
-                == ChemicalCloudVisuals.diffusionTier(2, cloud.capacity()),
-            "The cloud model should select the visual density band matching its AdPother capacity"
-        );
-        helper.assertTrue(
-            !helper.getBlockState(pos).is(carbon),
-            "The integration must not place an AdPother gas block"
-        );
+        helper.assertTrue(emitted == 2, "AdPother should accept both native pollutant units");
+        helper.assertTrue(helper.getBlockState(pos).is(carbon), "AdPother emission must remain a native pollutant block");
+        helper.assertTrue(carbon.getCarriedPollutionAmount(helper.getBlockState(pos)) == 2,
+            "The native block must retain both emitted units");
         helper.succeed();
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void gasIgnitionBurnsCloudAndFragileTerrainWithoutCratering(GameTestHelper helper) {
-        List<BlockPos> cloudPositions = List.of(
-            new BlockPos(1, 2, 1), new BlockPos(2, 2, 1), new BlockPos(3, 2, 1),
-            new BlockPos(3, 2, 2), new BlockPos(2, 2, 2), new BlockPos(1, 2, 2)
+    public static void nativeAdpotherPollutantUsesNativeMovement(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(2, 1, 2);
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon")
+            .orElseThrow(() -> new AssertionError("AdPother carbon selector must be registered"));
+        BlockPos absolute = helper.absolutePos(pos);
+        helper.assertTrue(carbon.pump(helper.getLevel(), absolute, 1) == 1, "Fixture must place one native carbon unit");
+        boolean moved = carbon.tryMove(
+            helper.getBlockState(pos), helper.getLevel(), absolute,
+            BiomeId.from(helper.getLevel(), absolute)
         );
-        for (int index = 0; index < cloudPositions.size(); index++) {
-            int expected = index == cloudPositions.size() - 1 ? 1 : 3;
-            ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPositions.get(index));
-            helper.assertTrue(cloud.insertUnits("carbon", expected) == expected,
-                "Cloud " + index + " should accept its carbon-gas contribution");
-        }
-
-        BlockPos fragilePos = cloudPositions.get(0).below();
-        BlockPos durablePos = cloudPositions.get(1).below();
-        helper.setBlock(fragilePos, Blocks.GLASS);
-        helper.setBlock(durablePos, Blocks.STONE);
-
-        boolean ignited = LatentGasHazardService.INSTANCE.tryIgniteAtAny(
-            helper.getLevel(),
-            List.of(helper.absolutePos(cloudPositions.get(0)))
-        );
-
-        helper.assertTrue(ignited, "Sixteen carbon-gas units should reach AdPother's explosive threshold");
-        cloudPositions.forEach(pos ->
-            helper.assertTrue(helper.getBlockEntity(pos) == null, "Ignition should consume every connected cloud cell")
-        );
-        helper.assertTrue(!helper.getBlockState(fragilePos).is(Blocks.GLASS), "Tagged glass should break without drops");
-        helper.assertTrue(helper.getBlockState(durablePos).is(Blocks.STONE), "Ordinary terrain should survive the fireball");
-        helper.succeed();
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
-    public static void advancedChimneyRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
-        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.CHIMNEY);
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
-    public static void advancedVentRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
-        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.VENT);
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
-    public static void advancedPumpRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
-        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.PUMP);
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", batch = "advancedChimneysRouting", timeoutTicks = 40)
-    public static void advancedPipeRoutesConfiguredEmitterIntoLatentMass(GameTestHelper helper) {
-        assertAdvancedChimneysRoute(helper, AdvancedChimneysRoute.PIPE);
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void adpotherExposureReadsOnlyWholeUnitsInTheSampledCloudCell(GameTestHelper helper) {
-        BlockPos cloudPos = new BlockPos(1, 1, 1);
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
-        cloud.seed(new ChemicalState("chemlib:carbon_dioxide", 32.0, 1.0, 293.0, 0.0, 0.0));
-        BlockPos absoluteCloudPos = helper.absolutePos(cloudPos);
-
-        var contact = AdpotherCloudView.INSTANCE.contactAt(
-            helper.getLevel(),
-            absoluteCloudPos,
-            net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos)
-        ).orElseThrow();
-        helper.assertTrue(contact.units() == 2, "Cloud contact should expose two whole AdPother units");
-        helper.assertTrue(
-            AdpotherCloudView.INSTANCE.contactAt(
-                helper.getLevel(),
-                absoluteCloudPos.east(),
-                net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos.east())
-            ).isEmpty(),
-            "An adjacent cell must not inherit cloud exposure"
-        );
-
-        cloud.extractMass(32.0);
-        helper.assertTrue(
-            AdpotherCloudView.INSTANCE.contactAt(
-                helper.getLevel(),
-                absoluteCloudPos,
-                net.minecraft.world.phys.Vec3.atCenterOf(absoluteCloudPos)
-            ).isEmpty(),
-            "A sub-unit cloud wisp must not apply AdPother exposure"
-        );
-        helper.succeed();
-    }
-
-    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void adpotherCloudViewDoesNotLoadAbsentChunks(GameTestHelper helper) {
-        BlockPos absentChunkPos = new BlockPos(29_999_984, 64, 29_999_984);
-        helper.assertTrue(
-            helper.getLevel().getChunkSource().getChunkNow(
-                absentChunkPos.getX() >> 4,
-                absentChunkPos.getZ() >> 4
-            ) == null,
-            "The regression fixture must begin outside the loaded chunk set"
-        );
-        helper.assertTrue(
-            AdpotherCloudView.INSTANCE.contactAt(
-                helper.getLevel(),
-                absentChunkPos,
-                net.minecraft.world.phys.Vec3.atCenterOf(absentChunkPos)
-            ).isEmpty(),
-            "Contact lookup should return empty for an absent chunk"
-        );
-        helper.assertTrue(
-            helper.getLevel().getChunkSource().getChunkNow(
-                absentChunkPos.getX() >> 4,
-                absentChunkPos.getZ() >> 4
-            ) == null,
-            "Contact lookup must not materialize an absent chunk"
-        );
+        helper.assertTrue(moved, "AdPother's native movement action should move its pollutant");
+        helper.assertTrue(!helper.getBlockState(pos).is(carbon), "The source cell should be debited by native movement");
         helper.succeed();
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasCapturePullsMatterFromAdjacentCloud(GameTestHelper helper) {
+    public static void gasCapturePullsMatterFromAdjacentNativePollutant(GameTestHelper helper) {
         BlockPos capturePos = new BlockPos(1, 1, 1);
-        BlockPos cloudPos = new BlockPos(2, 1, 1);
+        BlockPos pollutantPos = new BlockPos(2, 1, 1);
         LatentMachineBlockEntity capture = placeMachine(helper, capturePos, LatentChemlibMod.GAS_CAPTURE.get());
-        CloudInsertionService.INSTANCE.insert(
-            helper.getLevel(),
-            helper.absolutePos(cloudPos),
-            new ChemicalState("chemlib:carbon_dioxide", 1_000.0, 4.0, 600.0, 0.4, 200.0)
-        );
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon").orElseThrow();
+        helper.assertTrue(carbon.pump(helper.getLevel(), helper.absolutePos(pollutantPos), 3) == 3,
+            "Fixture must place three native pollutant units");
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(capture.storedState().mass() > 0.0, "Gas capture should pull matter from an adjacent cloud");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0, "Captured matter should remain mostly conserved across the nearby pollutant field");
+            helper.assertTrue(capture.storedState().massOf("chemlib:carbon_dioxide") > 0.0,
+                "Gas capture should convert native carbon pollution into contained carbon dioxide");
+            int remaining = helper.getBlockState(pollutantPos).is(carbon)
+                ? carbon.getCarriedPollutionAmount(helper.getBlockState(pollutantPos)) : 0;
+            helper.assertTrue(remaining * AdpotherGasBoundary.MASS_PER_ADPOTHER_UNIT + capture.storedState().mass() == 48.0,
+                "Capture must conserve native pollution units");
         });
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasReleaseCreatesCloudAboveAndConsumesStorage(GameTestHelper helper) {
+    public static void gasReleaseCreatesNativePollutantAndConsumesStorage(GameTestHelper helper) {
         BlockPos releasePos = new BlockPos(1, 1, 1);
-        BlockPos cloudPos = releasePos.above();
         LatentMachineBlockEntity release = placeMachine(helper, releasePos, LatentChemlibMod.GAS_RELEASE.get());
         release.setStoredState(new ChemicalState("chemlib:carbon_dioxide", 300.0, 2.0, 500.0, 0.1, 120.0));
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon").orElseThrow();
 
         helper.succeedWhen(() -> {
-            BlockEntity blockEntity = helper.getBlockEntity(cloudPos);
-            helper.assertTrue(blockEntity instanceof ChemicalCloudBlockEntity, "Gas release should create a cloud above itself");
-            ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) blockEntity;
-            helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"), "Gas release should seed a matching pollutant cell above itself");
-            helper.assertTrue(cloud.chemicalState().mass() > 0.0, "Gas release should move stored matter into a cloud");
+            helper.assertTrue(countPollutantUnits(helper, carbon, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0,
+                "Gas release should create native AdPother carbon pollution");
             helper.assertTrue(release.storedState().mass() < 300.0, "Gas release should consume storage");
         });
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasCaptureStoresAdjacentChemicalAsMixture(GameTestHelper helper) {
+    public static void gasCaptureStoresNativePollutantAsMixture(GameTestHelper helper) {
         BlockPos capturePos = new BlockPos(1, 1, 1);
-        BlockPos cloudPos = new BlockPos(2, 1, 1);
+        BlockPos pollutantPos = new BlockPos(2, 1, 1);
         LatentMachineBlockEntity capture = placeMachine(helper, capturePos, LatentChemlibMod.GAS_CAPTURE.get());
         capture.setStoredState(new ChemicalState("chemlib:helium", 200.0, 1.0, 300.0, 0.0, 20.0));
-        CloudInsertionService.INSTANCE.insert(
-            helper.getLevel(),
-            helper.absolutePos(cloudPos),
-            new ChemicalState("chemlib:carbon_dioxide", 800.0, 4.0, 600.0, 0.4, 120.0)
-        );
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon").orElseThrow();
+        helper.assertTrue(carbon.pump(helper.getLevel(), helper.absolutePos(pollutantPos), 3) == 3,
+            "Fixture must place native carbon pollution");
 
         helper.runAfterDelay(21, () -> {
             helper.assertTrue(capture.storedState().massOf("chemlib:helium") == 200.0, "Capture must retain its existing component");
             helper.assertTrue(capture.storedState().massOf("chemlib:carbon_dioxide") > 0.0, "Capture must accept a pollutant into its contained mixture");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) + capture.storedState().mass() > 900.0,
-                    "Mixed capture must mostly conserve aggregate matter");
             helper.succeed();
         });
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 80)
-    public static void gasReleasePlacesDifferentPollutantBesideOccupiedCell(GameTestHelper helper) {
+    public static void gasReleaseSeparatesContainedMixtureIntoNativePollutants(GameTestHelper helper) {
         BlockPos releasePos = new BlockPos(1, 1, 1);
-        BlockPos cloudPos = releasePos.above();
         LatentMachineBlockEntity release = placeMachine(helper, releasePos, LatentChemlibMod.GAS_RELEASE.get());
-        ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPos);
-        release.setStoredState(new ChemicalState("chemlib:sulfur_dioxide", 300.0, 2.0, 500.0, 0.1, 120.0));
-        cloud.seed(new ChemicalState("chemlib:carbon_dioxide", 400.0, 4.0, 650.0, 0.3, 160.0));
+        release.setStoredState(
+            new ChemicalState("chemlib:carbon_dioxide", 64.0, 2.0, 500.0, 0.1, 60.0)
+                .merge(new ChemicalState("chemlib:sulfur_dioxide", 64.0, 2.0, 500.0, 0.1, 60.0))
+        );
+        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon").orElseThrow();
+        Pollutant<?> sulfur = AdPother.getInstance().pollutants.findByName("sulfur").orElseThrow();
 
         helper.runAfterDelay(21, () -> {
-            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:carbon_dioxide") > 0.0,
-                    "Release must retain matter already present in the cloud field");
-            helper.assertTrue(totalCloudChemicalMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4), "chemlib:sulfur_dioxide") > 0.0,
-                    "Release must place a separate single-pollutant cell in the occupied field");
+            helper.assertTrue(countPollutantUnits(helper, carbon, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0,
+                "Mixed release must place native carbon pollution");
+            helper.assertTrue(countPollutantUnits(helper, sulfur, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0,
+                "Mixed release must place native sulfur pollution in a separate cell");
             helper.succeed();
         });
     }
@@ -455,7 +323,7 @@ public final class LatentChemlibGameTests {
     }
 
     @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
-    public static void placedGasFluidImmediatelyBecomesChemicalCloud(GameTestHelper helper) {
+    public static void placedGasFluidImmediatelyBecomesNativePollutant(GameTestHelper helper) {
         BlockPos pos = new BlockPos(1, 1, 1);
         var carbonDioxide = GasFluidCodec.sourceFluid("chemlib:carbon_dioxide").orElseThrow();
         helper.assertTrue(
@@ -463,12 +331,10 @@ public final class LatentChemlibGameTests {
             "Flowing and source gas fluid IDs must resolve to the same chemical"
         );
         helper.setBlock(pos, carbonDioxide.defaultFluidState().createLegacyBlock());
-        helper.assertTrue(helper.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity, "Placed gas fluid must immediately gasify");
         helper.assertTrue(!GasFluidCodec.isGasFluid(helper.getLevel().getFluidState(helper.absolutePos(pos)).getType()), "No gas fluid block may remain after conversion");
-        ChemicalCloudBlockEntity cloud = (ChemicalCloudBlockEntity) helper.getBlockEntity(pos);
-        helper.assertTrue(cloud.chemicalState().chemicalId().equals("chemlib:carbon_dioxide"), "Gasified fluid must preserve pollutant identity");
-        helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) == 64.0,
-            "One placed bucket must become exactly four atmospheric pollutant units");
+        Pollutant<?> carbonDioxidePollutant = AdpotherGasBoundary.INSTANCE.pollutantFor("chemlib:carbon_dioxide").orElseThrow();
+        helper.assertTrue(countPollutantUnits(helper, carbonDioxidePollutant, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) == 4,
+            "One placed bucket must become exactly four native atmospheric pollutant units");
         helper.succeed();
     }
 
@@ -481,7 +347,9 @@ public final class LatentChemlibGameTests {
 
         helper.runAfterDelay(21, () -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Loose gas must leave block inventories within 20 ticks");
-            helper.assertTrue(totalCloudMass(helper, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0.0, "Escaped inventory gas must become a cloud");
+            Pollutant<?> carbonDioxidePollutant = AdpotherGasBoundary.INSTANCE.pollutantFor("chemlib:carbon_dioxide").orElseThrow();
+            helper.assertTrue(countPollutantUnits(helper, carbonDioxidePollutant, new BlockPos(0, 0, 0), new BlockPos(4, 4, 4)) > 0,
+                "Escaped inventory gas must become native AdPother pollution");
             helper.succeed();
         });
     }
@@ -888,143 +756,6 @@ public final class LatentChemlibGameTests {
         helper.assertTrue(helper.getBlockEntity(pos) instanceof LatentMachineBlockEntity, block.getDescriptionId() + " should create a latent machine entity");
     }
 
-    private static void assertAdvancedChimneysRoute(GameTestHelper helper, AdvancedChimneysRoute route) {
-        BlockPos emitterPos = new BlockPos(1, 1, 1);
-        helper.setBlock(
-            emitterPos,
-            Blocks.FURNACE.defaultBlockState().setValue(BlockStateProperties.LIT, true)
-        );
-        BlockEntity emitterBlockEntity = helper.getBlockEntity(emitterPos);
-        helper.assertTrue(emitterBlockEntity instanceof FurnaceBlockEntity, "The route fixture must use a live furnace block entity");
-
-        BlockPos expectedOutlet = route.place(helper, emitterPos);
-        BlockPos absoluteEmitterPos = helper.absolutePos(emitterPos);
-        BlockPos absoluteOutlet = helper.absolutePos(expectedOutlet);
-
-        var adpotherEmitter = AdPother.getInstance().emitters
-            .get(helper.getLevel(), absoluteEmitterPos)
-            .orElseThrow(() -> new AssertionError("AdPother must load the configured minecraft:furnace emitter"));
-        helper.assertTrue(
-            AdChimneys.getInstance().emitters.get(helper.getLevel(), absoluteEmitterPos).isPresent(),
-            "Advanced Chimneys must load the same configured minecraft:furnace emitter"
-        );
-
-        Pollutant<?> carbon = AdPother.getInstance().pollutants.findByName("carbon")
-            .orElseThrow(() -> new AssertionError("AdPother carbon selector must be registered"));
-        List<AdpotherRoutingProbe.RouteEvent> routeEvents = new ArrayList<>();
-        int accepted = AdpotherRoutingProbe.observe(
-            routeEvents::add,
-            () -> carbon.emitFrom(emitterBlockEntity, adpotherEmitter.getRelatedBlocks(), 1)
-        );
-
-        helper.assertTrue(accepted == 1, route.label + " must accept exactly one configured emitter unit");
-        helper.assertTrue(
-            routeEvents.size() == 1,
-            route.label + " must select exactly one pollution outlet; observed " + routeEvents
-        );
-        AdpotherRoutingProbe.RouteEvent event = routeEvents.get(0);
-        helper.assertTrue(
-            event.outlet().equals(absoluteOutlet),
-            route.label + " must hand off at its resolved native outlet; expected " + absoluteOutlet + " but observed " + event.outlet()
-        );
-        helper.assertTrue(event.requested() == 1, route.label + " filter stage must account for the one requested unit");
-        helper.assertTrue(event.filtered() == 0, route.label + " empty filter path must not destroy the configured unit");
-        helper.assertTrue(event.emitted() == 1, route.label + " outlet handoff must insert the remaining unit into Latent");
-
-        BlockPos scanFrom = expectedOutlet.offset(-3, -3, -3);
-        BlockPos scanTo = expectedOutlet.offset(3, 3, 3);
-        helper.assertTrue(
-            totalCloudChemicalMass(helper, scanFrom, scanTo, "chemlib:carbon_dioxide") == 16.0,
-            route.label + " must convert one emitter unit into exactly 16 Latent carbon-dioxide mass"
-        );
-        helper.assertTrue(
-            totalCloudMass(helper, scanFrom, scanTo) == 16.0,
-            route.label + " must not duplicate or invent atmospheric mass"
-        );
-        for (BlockPos pos : BlockPos.betweenClosed(scanFrom, scanTo)) {
-            helper.assertTrue(!helper.getBlockState(pos).is(carbon), route.label + " must not leave a legacy AdPother gas block");
-        }
-        helper.succeed();
-    }
-
-    private enum AdvancedChimneysRoute {
-        CHIMNEY("Advanced Chimneys chimney") {
-            @Override
-            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
-                BlockPos chimneyPos = emitterPos.above();
-                helper.setBlock(chimneyPos, AdChimneys.getInstance().blocks.cobblestone_chimney.get());
-                helper.assertTrue(helper.getBlockState(chimneyPos).getBlock() instanceof Chimney, "Chimney fixture must use the registered Advanced Chimneys block");
-                return chimneyPos;
-            }
-        },
-        VENT("Advanced Chimneys vent network") {
-            @Override
-            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
-                BlockPos pumpPos = emitterPos.above();
-                BlockPos firstVent = pumpPos.above();
-                BlockPos secondVent = firstVent.east();
-                helper.setBlock(firstVent.west(), Blocks.STONE);
-                helper.setBlock(firstVent.north(), Blocks.STONE);
-                helper.setBlock(firstVent.south(), Blocks.STONE);
-                helper.setBlock(secondVent.north(), Blocks.STONE);
-                helper.setBlock(secondVent.south(), Blocks.STONE);
-                helper.setBlock(firstVent, AdChimneys.getInstance().blocks.stone_vent.get());
-                helper.setBlock(secondVent, AdChimneys.getInstance().blocks.stone_vent.get());
-                helper.setBlock(
-                    pumpPos,
-                    AdChimneys.getInstance().blocks.stone_pump.get().defaultBlockState()
-                        .setValue(BlockStateProperties.LIT, true)
-                );
-                helper.assertTrue(helper.getBlockState(firstVent).getBlock() instanceof Vent, "Vent fixture must use the registered Advanced Chimneys block");
-                helper.assertTrue(helper.getBlockState(secondVent).getBlock() instanceof Vent, "Vent fixture must use a live two-block vent network");
-                // ForgeEndertech's VentPipe.Output resolves and debits the starting vent before
-                // traversing the rest of the chain when Advanced Chimneys accepts every outlet.
-                return firstVent;
-            }
-        },
-        PUMP("Advanced Chimneys pump") {
-            @Override
-            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
-                BlockPos pumpPos = emitterPos.above();
-                helper.setBlock(
-                    pumpPos,
-                    AdChimneys.getInstance().blocks.stone_pump.get().defaultBlockState()
-                        .setValue(BlockStateProperties.LIT, true)
-                );
-                helper.assertTrue(helper.getBlockState(pumpPos).getBlock() instanceof Pump, "Pump fixture must use the registered Advanced Chimneys block");
-                return pumpPos.above();
-            }
-        },
-        PIPE("Advanced Chimneys pipe") {
-            @Override
-            BlockPos place(GameTestHelper helper, BlockPos emitterPos) {
-                BlockPos pipePos = emitterPos.above();
-                helper.setBlock(pipePos, AdChimneys.getInstance().blocks.pipe.get());
-                helper.assertTrue(helper.getBlockState(pipePos).getBlock() instanceof Pipe, "Pipe fixture must use the registered Advanced Chimneys block");
-                return pipePos.above();
-            }
-        };
-
-        private final String label;
-
-        AdvancedChimneysRoute(String label) {
-            this.label = label;
-        }
-
-        abstract BlockPos place(GameTestHelper helper, BlockPos emitterPos);
-    }
-
-    private static ChemicalCloudBlockEntity placeCloud(GameTestHelper helper, BlockPos pos) {
-        helper.setBlock(pos, LatentChemlibMod.CHEMICAL_CLOUD.get());
-        return cloudAt(helper, pos);
-    }
-
-    private static ChemicalCloudBlockEntity cloudAt(GameTestHelper helper, BlockPos pos) {
-        BlockEntity blockEntity = helper.getBlockEntity(pos);
-        if (blockEntity instanceof ChemicalCloudBlockEntity cloud) return cloud;
-        throw new IllegalStateException("Expected chemical cloud at " + pos);
-    }
-
     private static LatentMachineBlockEntity placeMachine(GameTestHelper helper, BlockPos pos, Block block) {
         helper.setBlock(pos, block);
         BlockEntity blockEntity = helper.getBlockEntity(pos);
@@ -1036,26 +767,12 @@ public final class LatentChemlibGameTests {
         return machine.getCapability(ForgeCapabilities.FLUID_HANDLER).orElseThrow(AssertionError::new);
     }
 
-    private static double totalCloudMass(GameTestHelper helper, BlockPos from, BlockPos to) {
-        double mass = 0.0;
+    private static int countPollutantUnits(GameTestHelper helper, Pollutant<?> pollutant, BlockPos from, BlockPos to) {
+        int units = 0;
         for (BlockPos pos : BlockPos.betweenClosed(from, to)) {
-            BlockEntity blockEntity = helper.getBlockEntity(pos);
-            if (blockEntity instanceof ChemicalCloudBlockEntity cloud) {
-                mass += cloud.chemicalState().mass();
-            }
+            if (helper.getBlockState(pos).is(pollutant)) units += pollutant.getCarriedPollutionAmount(helper.getBlockState(pos));
         }
-        return mass;
-    }
-
-    private static double totalCloudChemicalMass(GameTestHelper helper, BlockPos from, BlockPos to, String chemicalId) {
-        double mass = 0.0;
-        for (BlockPos pos : BlockPos.betweenClosed(from, to)) {
-            BlockEntity blockEntity = helper.getBlockEntity(pos);
-            if (blockEntity instanceof ChemicalCloudBlockEntity cloud) {
-                mass += cloud.chemicalState().massOf(chemicalId);
-            }
-        }
-        return mass;
+        return units;
     }
 
 }

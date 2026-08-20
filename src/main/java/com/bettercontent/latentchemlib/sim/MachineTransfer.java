@@ -5,9 +5,9 @@ public final class MachineTransfer {
 
     private MachineTransfer() {}
 
-    public static double captureAmount(double storedMass, double cloudMass, double capacity) {
+    public static double captureAmount(double storedMass, double availableMass, double capacity) {
         double remaining = Math.max(0.0, capacity - Math.max(0.0, storedMass));
-        double available = Math.max(0.0, cloudMass) * 0.25;
+        double available = Math.max(0.0, availableMass) * 0.25;
         return Math.min(remaining, Math.min(TRANSFER_MASS, available));
     }
 }

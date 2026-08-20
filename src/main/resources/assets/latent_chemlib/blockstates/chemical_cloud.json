@@ -1,8 +1,0 @@
-{
-  "variants": {
-    "diffusion=0": { "model": "latent_chemlib:block/chemical_cloud_diffusion_0" },
-    "diffusion=1": { "model": "latent_chemlib:block/chemical_cloud_diffusion_1" },
-    "diffusion=2": { "model": "latent_chemlib:block/chemical_cloud_diffusion_2" },
-    "diffusion=3": { "model": "latent_chemlib:block/chemical_cloud_diffusion_3" }
-  }
-}

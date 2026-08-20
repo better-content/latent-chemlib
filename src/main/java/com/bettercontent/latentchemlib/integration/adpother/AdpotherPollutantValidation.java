@@ -20,7 +20,7 @@ public final class AdpotherPollutantValidation {
         List<String> missing = new ArrayList<>();
         ForgeRegistries.ITEMS.getEntries().forEach(entry -> {
             if (entry.getValue() instanceof Chemical chemical && chemical.getMatterState() == MatterState.GAS
-                && AdpotherAtmosphereBridge.INSTANCE.pollutantFor(entry.getKey().location().toString()).isEmpty()) {
+                && AdpotherGasBoundary.INSTANCE.pollutantFor(entry.getKey().location().toString()).isEmpty()) {
                 missing.add(entry.getKey().location().toString());
             }
         });

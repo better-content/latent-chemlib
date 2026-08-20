@@ -3,6 +3,7 @@ package com.bettercontent.latentchemlib.sim;
 import com.bettercontent.latentchemlib.LatentChemlibMod;
 import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.bettercontent.latentchemlib.data.LatentDataManager;
+import com.bettercontent.latentchemlib.integration.adpother.AdpotherGasBoundary;
 import com.smashingmods.chemlib.api.Chemical;
 import com.smashingmods.chemlib.api.MatterState;
 import net.minecraft.core.BlockPos;
@@ -258,7 +259,7 @@ public class GasEscapeHandler {
     private Optional<ItemStack> replaceEscapedStack(ItemStack stack, ServerLevel level, BlockPos origin) {
         Optional<EscapePayload> payload = escapePayload(stack);
         if (payload.isEmpty()) return Optional.empty();
-        CloudInsertionService.InsertionResult inserted = CloudInsertionService.INSTANCE.insert(level, origin, payload.get().state());
+        AdpotherGasBoundary.ReleaseResult inserted = AdpotherGasBoundary.INSTANCE.release(level, origin, payload.get().state());
         if (!inserted.acceptedAll()) return Optional.empty();
         return Optional.of(payload.get().replacement());
     }
@@ -316,16 +317,14 @@ public class GasEscapeHandler {
         return chemical != null && chemical.getMatterState() == MatterState.GAS;
     }
 
-    /**
-     * Seeds all matter into one viable cloud. The caller may consume its source only after true.
-     */
-    public static boolean spawnCloud(ServerLevel level, BlockPos origin, ChemicalState state) {
-        return CloudInsertionService.INSTANCE.insert(level, origin, state).acceptedAll();
+    /** Releases all convertible matter through the native AdPother boundary. */
+    public static boolean releaseGas(ServerLevel level, BlockPos origin, ChemicalState state) {
+        return AdpotherGasBoundary.INSTANCE.release(level, origin, state).acceptedAll();
     }
 
     /**
-     * Replaces a gas-fluid block with its cloud representation at the same position.
-     * A failed block replacement leaves the fluid and therefore its matter intact.
+     * Replaces a gas-fluid block with native AdPother pollution at the same position.
+     * A failed conversion restores the fluid and therefore leaves its matter intact.
      */
     public static boolean gasifyFluidBlock(ServerLevel level, BlockPos pos) {
         var fluidState = level.getFluidState(pos);
@@ -336,7 +335,7 @@ public class GasEscapeHandler {
         );
         if (decoded.isEmpty()) return false;
         if (!level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3)) return false;
-        CloudInsertionService.InsertionResult inserted = CloudInsertionService.INSTANCE.insert(level, pos, decoded.get());
+        AdpotherGasBoundary.ReleaseResult inserted = AdpotherGasBoundary.INSTANCE.release(level, pos, decoded.get());
         if (inserted.acceptedAll()) return true;
         level.setBlock(pos, fluidState.createLegacyBlock(), 3);
         return false;

@@ -1,7 +1,7 @@
 package com.bettercontent.latentchemlib.data;
 
 public record SchedulerProfile(
-    int cloudUpdatesPerSecond,
+    int machineUpdatesPerSecond,
     int neighborOpsPerSecond,
     int escapeScansPerSecond,
     int nuclearSurfaceScansPerSecond,

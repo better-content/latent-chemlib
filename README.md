@@ -1,9 +1,9 @@
 # Latent ChemLib
 
 Latent ChemLib is a Forge `1.20.1` mod for file-configured ChemLib matter
-simulation. It provides chemical cloud blocks, containment machinery, high
-energy reaction math, gas item escape behavior, and heavy-element neutron
-economy hooks for expert modpacks.
+simulation. It provides containment machinery, high energy reaction math, gas
+item escape behavior, an AdPother atmospheric boundary, and heavy-element
+neutron economy hooks for expert modpacks.
 
 The design goal is emergent behavior from numeric traits and curve intercepts,
 not hard-coded per-element special cases. Pack authors can tune chemical
@@ -12,20 +12,13 @@ ChemLib registry data.
 
 ## Current Features
 
-- Translucent, walkable `latent_chemlib:chemical_cloud` cells carrying exactly
-  one registered AdPother pollutant and a bounded whole-unit concentration.
-  Their volume density and retained swirl particles scale with concentration,
-  and both use the pollutant color configured by AdPother.
-- AdPother terminal-emission integration that retains its emitters, fuels,
-  chimneys, exact selectors, impacts, alarms, respirators, filters, and vacuum
-  bags while using Latent clouds as the sole atmospheric gas state.
-- A conserved bridge ratio of 16 Latent mass per AdPother unit. Chimney filters
-  run before handoff and vacuum cleanup is accepted only into remediation bags.
-  The bridge adds no queue or scheduler mode.
-- AdPother-configured atmospheric movement, dissipation, impacts, protection,
-  detection, and cleanup over Latent-owned cells. Ignited flammable components
-  become broad fireballs: cloud-shaped flame, smoke, entity heat, optional fire
-  placement, and tagged fragile-block breakage with deliberately low blast force.
+- A narrow atmospheric boundary that turns contained ChemLib gases into native
+  AdPother pollutant blocks and captures native pollutant blocks back into the
+  explicit gas-capture machine.
+- A conserved bridge ratio of 16 Latent mass per AdPother unit. Release is
+  preflighted atomically, while AdPother remains the sole authority for ambient
+  density, movement, wind, spreading, impacts, protection, detection,
+  explosions, filtering, chimney routing, and cleanup.
 - Gas item escape handling for item entities and player inventories.
 - Heavy element neutron flux simulation for ChemLib element stacks.
 - Data-driven fixed radioactive-family profiles selected by exact item/block ID
@@ -51,7 +44,7 @@ ChemLib registry data.
 - File-based datapack reload support for:
   - `data/latent_chemlib/chemical_traits/*.json`
   - `data/latent_chemlib/scheduler_profiles/default.json`
-- Server tick budget scheduler for cloud and neutron workloads.
+- Server tick budget scheduler for contained-machine and neutron workloads.
 - Unit tests for numeric curves and emergent simulation math.
 
 ## Tech Stack
@@ -81,7 +74,7 @@ Common tasks:
 The JVM unit coverage gate is intentionally focused on the pure simulation and
 configuration core. Forge event handlers and block entities are integration
 boundaries. The bundled Forge GameTests cover the current in-world block entity
-surfaces: cloud state, machine block entity creation, capture, release,
+surfaces: native atmospheric handoff, machine block entity creation, capture, release,
 reaction chamber agitation, PNCR pressure-network participation, selectable
 transport authority, lossless mixture movement, and finite dry-air separation.
 `verifyFast` runs the JVM coverage gate. `verifyFull` adds the headless Forge GameTest pass without the old property-driven rerun path.
@@ -114,13 +107,9 @@ charge, and energy conditioning rates. Machine profiles use the explicit
   Pack-specific recipes, progression gates, and datapack tuning live in the
   consuming pack.
 - Complex mixtures, temperature, charge, reaction, and nuclear state remain
-  contained in machines and items; ambient cells deliberately do not retain
-  those properties. Atmospheric conversion uses 16 Latent mass per whole
-  AdPother unit and discards sub-unit release remainder.
-- Gas fireballs never use vanilla terrain destruction. Pack integrations can
-  identify their internal, non-summonable source as
-  `latent_chemlib:gas_fireball_source`; datapacks control heat-fragile terrain
-  through `#latent_chemlib:gas_fireball_fragile`.
+  contained in machines and items. Atmospheric conversion uses 16 Latent mass
+  per whole AdPother unit, discards sub-unit release remainder, and separates
+  mixtures into distinct native pollutant blocks.
 
 ## Community and support
 
