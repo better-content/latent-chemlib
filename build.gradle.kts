@@ -205,6 +205,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
 }
 
+tasks.named<JavaCompile>("compileJava") {
+    // MixinGradle does not declare this annotation-processor sidecar itself.
+    // Tracking it prevents an incremental release build from reusing classes
+    // after the refmap has disappeared and silently producing an unusable JAR.
+    outputs.file(layout.buildDirectory.file("tmp/compileJava/latent_chemlib.refmap.json"))
+}
+
 tasks.withType<KotlinCompile>().configureEach {
     kotlinOptions.jvmTarget = "17"
 }
