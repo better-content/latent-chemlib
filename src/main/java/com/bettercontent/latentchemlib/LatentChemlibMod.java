@@ -13,10 +13,13 @@ import com.bettercontent.latentchemlib.sim.PlacedNuclearLifecycle;
 import com.bettercontent.latentchemlib.sim.PlacedNuclearLootModifier;
 import com.bettercontent.latentchemlib.sim.SimulationScheduler;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherPollutantValidation;
+import com.bettercontent.latentchemlib.integration.adpother.GasFireballSourceEntity;
 import com.mojang.serialization.Codec;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -42,6 +45,7 @@ public class LatentChemlibMod {
     public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID);
     public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, MOD_ID);
+    public static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MOD_ID);
     public static final DeferredRegister<Codec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
         DeferredRegister.create(ForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
     public static final RegistryObject<Codec<? extends IGlobalLootModifier>> PLACED_NUCLEAR_LOOT_MODIFIER =
@@ -83,11 +87,22 @@ public class LatentChemlibMod {
                 DRY_AIR_SEPARATOR.get()
             ).build(null));
 
+    public static final RegistryObject<EntityType<GasFireballSourceEntity>> GAS_FIREBALL_SOURCE =
+        ENTITY_TYPES.register("gas_fireball_source", () -> EntityType.Builder
+            .<GasFireballSourceEntity>of(GasFireballSourceEntity::new, MobCategory.MISC)
+            .sized(0.01f, 0.01f)
+            .clientTrackingRange(0)
+            .updateInterval(Integer.MAX_VALUE)
+            .noSummon()
+            .noSave()
+            .build(MOD_ID + ":gas_fireball_source"));
+
     public LatentChemlibMod() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
+        ENTITY_TYPES.register(modBus);
         LOOT_MODIFIER_SERIALIZERS.register(modBus);
         modBus.addListener(this::registerCapabilities);
         MinecraftForge.EVENT_BUS.addListener(this::addReloadListeners);

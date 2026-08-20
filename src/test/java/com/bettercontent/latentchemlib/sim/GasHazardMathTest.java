@@ -26,10 +26,11 @@ class GasHazardMathTest {
     }
 
     @Test
-    void blastPowerUsesConservativeCubeRootCap() {
-        assertEquals(2.0f, GasHazardMath.blastPower(1.0));
-        assertEquals(4.0f, GasHazardMath.blastPower(64.0));
-        assertEquals(8.0f, GasHazardMath.blastPower(4096.0));
+    void blastPowerKeepsTheFireballForceLow() {
+        assertEquals(1.5f, GasHazardMath.blastPower(1.0));
+        assertEquals(2.0f, GasHazardMath.blastPower(8.0));
+        assertEquals(3.0f, GasHazardMath.blastPower(27.0));
+        assertEquals(3.0f, GasHazardMath.blastPower(4096.0));
     }
 
     @Test

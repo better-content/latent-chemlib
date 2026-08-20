@@ -1,0 +1,23 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:leaves",
+    "#minecraft:flowers",
+    "#minecraft:crops",
+    "#minecraft:saplings",
+    "#minecraft:wool_carpets",
+    {
+      "id": "#forge:glass",
+      "required": false
+    },
+    {
+      "id": "#forge:glass_panes",
+      "required": false
+    },
+    "minecraft:cobweb",
+    "minecraft:vine",
+    "minecraft:brown_mushroom",
+    "minecraft:red_mushroom",
+    "minecraft:snow"
+  ]
+}

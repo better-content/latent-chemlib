@@ -12,8 +12,10 @@ ChemLib registry data.
 
 ## Current Features
 
-- Transparent, walkable `latent_chemlib:chemical_cloud` cells carrying exactly
+- Translucent, walkable `latent_chemlib:chemical_cloud` cells carrying exactly
   one registered AdPother pollutant and a bounded whole-unit concentration.
+  Their volume density and retained swirl particles scale with concentration,
+  and both use the pollutant color configured by AdPother.
 - AdPother terminal-emission integration that retains its emitters, fuels,
   chimneys, exact selectors, impacts, alarms, respirators, filters, and vacuum
   bags while using Latent clouds as the sole atmospheric gas state.
@@ -21,7 +23,9 @@ ChemLib registry data.
   run before handoff and vacuum cleanup is accepted only into remediation bags.
   The bridge adds no queue or scheduler mode.
 - AdPother-configured atmospheric movement, dissipation, impacts, protection,
-  detection, cleanup, and explosive behavior over Latent-owned cells.
+  detection, and cleanup over Latent-owned cells. Ignited flammable components
+  become broad fireballs: cloud-shaped flame, smoke, entity heat, optional fire
+  placement, and tagged fragile-block breakage with deliberately low blast force.
 - Gas item escape handling for item entities and player inventories.
 - Heavy element neutron flux simulation for ChemLib element stacks.
 - Data-driven fixed radioactive-family profiles selected by exact item/block ID
@@ -113,6 +117,10 @@ charge, and energy conditioning rates. Machine profiles use the explicit
   contained in machines and items; ambient cells deliberately do not retain
   those properties. Atmospheric conversion uses 16 Latent mass per whole
   AdPother unit and discards sub-unit release remainder.
+- Gas fireballs never use vanilla terrain destruction. Pack integrations can
+  identify their internal, non-summonable source as
+  `latent_chemlib:gas_fireball_source`; datapacks control heat-fragile terrain
+  through `#latent_chemlib:gas_fireball_fragile`.
 
 ## Community and support
 

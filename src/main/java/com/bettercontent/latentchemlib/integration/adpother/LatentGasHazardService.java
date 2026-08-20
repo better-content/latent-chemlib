@@ -1,5 +1,6 @@
 package com.bettercontent.latentchemlib.integration.adpother;
 
+import com.bettercontent.latentchemlib.LatentChemlibMod;
 import com.endertech.minecraft.mods.adpother.blocks.AbstractGas;
 import com.endertech.minecraft.mods.adpother.pollution.WorldData;
 import com.bettercontent.latentchemlib.blockentity.ChemicalCloudBlockEntity;
@@ -127,14 +128,18 @@ public final class LatentGasHazardService {
             if (level.getBlockEntity(pos) instanceof ChemicalCloudBlockEntity) level.removeBlock(pos, false);
         });
         Vec3 center = component.center();
+        GasFireballSourceEntity source = LatentChemlibMod.GAS_FIREBALL_SOURCE.get().create(level);
+        source.setPos(center);
         level.explode(
-            null,
+            source,
             center.x,
             center.y,
             center.z,
             GasHazardMath.blastPower(component.totalUnits()),
-            Level.ExplosionInteraction.BLOCK
+            false,
+            Level.ExplosionInteraction.NONE
         );
+        GasFireballEffects.apply(level, component.positions(), source);
         return true;
     }
 

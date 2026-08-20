@@ -19,7 +19,7 @@ public final class GasHazardMath {
     }
 
     public static float blastPower(double units) {
-        return (float) Math.max(2.0, Math.min(8.0, Math.cbrt(Math.max(0.0, units))));
+        return (float) Math.max(1.5, Math.min(3.0, Math.cbrt(Math.max(0.0, units))));
     }
 
     public static int attenuateUnits(int units, double protectedFraction) {

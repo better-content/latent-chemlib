@@ -357,5 +357,8 @@ class ChemicalStateTest {
         assertEquals(1, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 2.0, 293.0, 0.0, 0.0)));
         assertEquals(2, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 0.5, 293.0, 0.0, 0.0)));
         assertEquals(3, ChemicalCloudVisuals.diffusionTier(new ChemicalState("chemlib:chlorine", 100.0, 0.1, 293.0, 0.0, 0.0)));
+        assertEquals(2, ChemicalCloudVisuals.diffusionTier(1, 3));
+        assertEquals(1, ChemicalCloudVisuals.diffusionTier(2, 3));
+        assertEquals(0, ChemicalCloudVisuals.diffusionTier(3, 3));
     }
 }

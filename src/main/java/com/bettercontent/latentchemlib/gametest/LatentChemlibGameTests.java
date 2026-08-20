@@ -15,10 +15,12 @@ import com.bettercontent.latentchemlib.blockentity.LatentMachineBlockEntity;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherCloudView;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherRoutingProbe;
+import com.bettercontent.latentchemlib.integration.adpother.LatentGasHazardService;
 import com.bettercontent.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.bettercontent.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.bettercontent.latentchemlib.sim.ChemicalState;
 import com.bettercontent.latentchemlib.sim.CloudInsertionService;
+import com.bettercontent.latentchemlib.sim.ChemicalCloudVisuals;
 import com.bettercontent.latentchemlib.sim.GasFluidCodec;
 import com.bettercontent.latentchemlib.sim.NuclearSimulationService;
 import com.bettercontent.latentchemlib.sim.NuclearStackData;
@@ -190,9 +192,46 @@ public final class LatentChemlibGameTests {
         );
         helper.assertTrue(cloud.chemicalState().mass() == 32.0, "Two AdPother units should equal 32 Latent mass");
         helper.assertTrue(
+            helper.getBlockState(pos).getValue(com.bettercontent.latentchemlib.block.ChemicalCloudBlock.DIFFUSION)
+                == ChemicalCloudVisuals.diffusionTier(2, cloud.capacity()),
+            "The cloud model should select the visual density band matching its AdPother capacity"
+        );
+        helper.assertTrue(
             !helper.getBlockState(pos).is(carbon),
             "The integration must not place an AdPother gas block"
         );
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "minecraft", template = "empty", timeoutTicks = 40)
+    public static void gasIgnitionBurnsCloudAndFragileTerrainWithoutCratering(GameTestHelper helper) {
+        List<BlockPos> cloudPositions = List.of(
+            new BlockPos(1, 2, 1), new BlockPos(2, 2, 1), new BlockPos(3, 2, 1),
+            new BlockPos(3, 2, 2), new BlockPos(2, 2, 2), new BlockPos(1, 2, 2)
+        );
+        for (int index = 0; index < cloudPositions.size(); index++) {
+            int expected = index == cloudPositions.size() - 1 ? 1 : 3;
+            ChemicalCloudBlockEntity cloud = placeCloud(helper, cloudPositions.get(index));
+            helper.assertTrue(cloud.insertUnits("carbon", expected) == expected,
+                "Cloud " + index + " should accept its carbon-gas contribution");
+        }
+
+        BlockPos fragilePos = cloudPositions.get(0).below();
+        BlockPos durablePos = cloudPositions.get(1).below();
+        helper.setBlock(fragilePos, Blocks.GLASS);
+        helper.setBlock(durablePos, Blocks.STONE);
+
+        boolean ignited = LatentGasHazardService.INSTANCE.tryIgniteAtAny(
+            helper.getLevel(),
+            List.of(helper.absolutePos(cloudPositions.get(0)))
+        );
+
+        helper.assertTrue(ignited, "Sixteen carbon-gas units should reach AdPother's explosive threshold");
+        cloudPositions.forEach(pos ->
+            helper.assertTrue(helper.getBlockEntity(pos) == null, "Ignition should consume every connected cloud cell")
+        );
+        helper.assertTrue(!helper.getBlockState(fragilePos).is(Blocks.GLASS), "Tagged glass should break without drops");
+        helper.assertTrue(helper.getBlockState(durablePos).is(Blocks.STONE), "Ordinary terrain should survive the fireball");
         helper.succeed();
     }
 

@@ -6,6 +6,7 @@ import com.bettercontent.latentchemlib.integration.adpother.AdpotherAtmosphereBr
 import com.bettercontent.latentchemlib.sim.AtmosphericPollutantState;
 import com.bettercontent.latentchemlib.sim.ChemicalState;
 import com.bettercontent.latentchemlib.sim.CloudInsertionService;
+import com.bettercontent.latentchemlib.sim.ChemicalCloudVisuals;
 import com.bettercontent.latentchemlib.sim.SimulationBudget;
 import com.bettercontent.latentchemlib.sim.SimulationScheduler;
 import com.endertech.minecraft.mods.adpother.blocks.AbstractGas;
@@ -108,10 +109,18 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
 
     public static void tick(Level level, BlockPos pos, BlockState blockState, ChemicalCloudBlockEntity entity) {
         if (level.isClientSide) {
-            if (!entity.pollutantState.isEmpty() && level.random.nextInt(4) == 0) {
+            int tier = blockState.getValue(ChemicalCloudBlock.DIFFUSION);
+            int particleInterval = switch (tier) {
+                case 0 -> 2;
+                case 1 -> 3;
+                case 2 -> 4;
+                default -> 6;
+            };
+            if (!entity.pollutantState.isEmpty() && level.random.nextInt(particleInterval) == 0) {
+                int color = ChemicalCloudVisuals.colorForPollutant(entity.pollutantState.pollutantId());
                 level.addParticle(net.minecraft.core.particles.ParticleTypes.AMBIENT_ENTITY_EFFECT,
                     pos.getX() + level.random.nextDouble(), pos.getY() + level.random.nextDouble(), pos.getZ() + level.random.nextDouble(),
-                    0.72, 0.86, 0.92);
+                    ((color >> 16) & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, (color & 0xFF) / 255.0);
             }
             return;
         }
@@ -150,8 +159,7 @@ public class ChemicalCloudBlockEntity extends BlockEntity {
         if (level == null || level.isClientSide) return;
         BlockState current = getBlockState();
         if (!current.hasProperty(ChemicalCloudBlock.DIFFUSION)) return;
-        int capacity = Math.max(1, capacity());
-        int tier = Math.min(3, Math.max(0, (int) Math.ceil(pollutantState.units() * 4.0 / capacity) - 1));
+        int tier = ChemicalCloudVisuals.diffusionTier(pollutantState.units(), capacity());
         if (current.getValue(ChemicalCloudBlock.DIFFUSION) != tier) {
             level.setBlock(worldPosition, current.setValue(ChemicalCloudBlock.DIFFUSION, tier), 3);
         } else {
