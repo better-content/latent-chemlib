@@ -550,6 +550,7 @@ public final class LatentChemlibGameTests {
 
         helper.succeedWhen(() -> {
             ItemStack stored = chest.getItem(0);
+            if (!stored.hasTag()) NuclearSurfaceScanner.INSTANCE.scanBlockInventoryNow(helper.getLevel(), chest);
             helper.assertTrue(stored.hasTag() && stored.getOrCreateTag().contains(NuclearStackData.STATE_KEY),
                 "Alternate form must carry its per-unit nuclear ledger");
             ChemicalState state = ChemicalState.load(stored.getOrCreateTag().getCompound(NuclearStackData.STATE_KEY));

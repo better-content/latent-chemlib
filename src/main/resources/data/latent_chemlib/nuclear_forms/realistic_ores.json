@@ -1,0 +1,18 @@
+{
+  "schema": "bc.latent_chemlib.nuclear_forms.v2",
+  "forms": [
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/small_chunks", "family": "uranium", "material_units": 0.25, "radiation_strength": 2.0, "heat_strength": 0.5, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/full_chunks", "family": "uranium", "radiation_strength": 6.0, "heat_strength": 1.5, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/crushed_feed", "family": "uranium", "radiation_strength": 8.0, "heat_strength": 2.0, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/concentrate", "family": "uranium", "radiation_strength": 16.0, "heat_strength": 5.0, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/final_forms", "family": "uranium", "radiation_strength": 20.0, "heat_strength": 7.0, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/uranium/hosted_ore_blocks", "block_tag": "realistic_ores:radioactive_forms/uranium/hosted_ore_blocks", "family": "uranium", "radiation_strength": 12.0, "heat_strength": 3.0, "natural_worldgen_inert": true, "placed_always_active": true },
+
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/small_chunks", "family": "thorium", "material_units": 0.25, "radiation_strength": 1.5, "heat_strength": 0.4, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/full_chunks", "family": "thorium", "radiation_strength": 5.0, "heat_strength": 1.2, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/crushed_feed", "family": "thorium", "radiation_strength": 6.0, "heat_strength": 1.6, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/concentrate", "family": "thorium", "radiation_strength": 13.0, "heat_strength": 4.0, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/final_forms", "family": "thorium", "radiation_strength": 17.0, "heat_strength": 5.5, "placed_always_active": true },
+    { "item_tag": "realistic_ores:radioactive_forms/thorium/hosted_ore_blocks", "block_tag": "realistic_ores:radioactive_forms/thorium/hosted_ore_blocks", "family": "thorium", "radiation_strength": 10.0, "heat_strength": 2.5, "natural_worldgen_inert": true, "placed_always_active": true }
+  ]
+}

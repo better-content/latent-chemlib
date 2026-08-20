@@ -20,7 +20,6 @@ val flywheelVersion = property("flywheel_version") as String
 val registrateVersion = property("registrate_version") as String
 val chemlibVersion = property("chemlib_version") as String
 val chemlibCurseFileId = property("chemlib_curse_file_id") as String
-val heatSyncVersion = property("heat_sync_version") as String
 val emiVersion = property("emi_version") as String
 val emiCurseFileId = property("emi_curse_file_id") as String
 val jeiVersion = property("jei_version") as String
@@ -112,7 +111,6 @@ repositories {
     }
     maven("https://maven.blamejared.com")
     flatDir {
-        dirs("../heat-sync/build/libs")
         dirs("../better-content/generated/cache/packwiz-downloads/mods")
     }
 }
@@ -139,8 +137,6 @@ dependencies {
     runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2048"))
     compileOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
     runtimeOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
-    compileOnly(deobf("com.bettercontent:heat-sync:$heatSyncVersion"))
-    runtimeOnly(deobf("com.bettercontent:heat-sync:$heatSyncVersion"))
     compileOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
     runtimeOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
     compileOnly(deobf("mezz.jei:jei-$minecraftVersion-common-api:$jeiVersion"))
@@ -157,7 +153,6 @@ tasks.processResources {
         "forgeVersion" to forgeVersion,
         "kotlinForForgeVersion" to kotlinForForgeVersion,
         "createReleaseVersion" to createReleaseVersion,
-        "heatSyncVersion" to heatSyncVersion,
         "chemlibVersion" to chemlibVersion,
         "emiVersion" to emiVersion,
         "jeiVersion" to jeiVersion,

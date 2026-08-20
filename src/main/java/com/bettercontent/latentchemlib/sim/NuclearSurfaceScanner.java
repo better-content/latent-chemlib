@@ -259,6 +259,25 @@ public class NuclearSurfaceScanner {
 
     private ActiveHolderSet.Decision scanPlacedMaterial(ServerLevel level, BlockPos pos, boolean[] canContinue) {
         if (!level.isLoaded(pos)) return ActiveHolderSet.Decision.REMOVE;
+        DisturbedRadioactiveData disturbed = DisturbedRadioactiveData.get(level);
+        DisturbedRadioactiveData.Entry fixedEntry = disturbed.get(pos).orElse(null);
+        if (fixedEntry != null) {
+            Optional<RadioactiveFormResolver.ResolvedBlock> resolved =
+                RadioactiveFormResolver.INSTANCE.resolve(level.getBlockState(pos));
+            if (resolved.isEmpty() || !disturbed.matches(pos, resolved.get())) {
+                disturbed.remove(pos);
+                return ActiveHolderSet.Decision.REMOVE;
+            }
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_SURFACE_SCANS, 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            if (!NuclearSimulationService.INSTANCE.emitFixedProfile(level, pos, resolved.get().form(), 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
+            return ActiveHolderSet.Decision.KEEP;
+        }
         PlacedNuclearData data = PlacedNuclearData.get(level);
         PlacedNuclearData.Entry entry = data.get(pos).orElse(null);
         if (entry == null) return ActiveHolderSet.Decision.REMOVE;

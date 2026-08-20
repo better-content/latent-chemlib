@@ -41,13 +41,6 @@ ordering="AFTER"
 side="BOTH"
 
 [[dependencies.${modId}]]
-modId="heat_sync"
-mandatory=true
-versionRange="[${heatSyncVersion},)"
-ordering="AFTER"
-side="BOTH"
-
-[[dependencies.${modId}]]
 modId="chemlib"
 mandatory=true
 versionRange="[${chemlibVersion},)"

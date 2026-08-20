@@ -10,6 +10,7 @@ import com.bettercontent.latentchemlib.sim.ChemicalState;
 import com.bettercontent.latentchemlib.sim.EmergentMath;
 import com.bettercontent.latentchemlib.sim.GasFluidCodec;
 import com.bettercontent.latentchemlib.sim.GasFluidStorage;
+import com.bettercontent.latentchemlib.sim.HeatReceiver;
 import com.bettercontent.latentchemlib.sim.MachineTransfer;
 import com.bettercontent.latentchemlib.sim.NuclearSimulationService;
 import com.bettercontent.latentchemlib.sim.ReactionRuleSelector;
@@ -18,9 +19,6 @@ import com.bettercontent.latentchemlib.sim.SimulationScheduler;
 import com.bettercontent.latentchemlib.integration.pneumatic.DryAirSeparation;
 import com.bettercontent.latentchemlib.integration.pneumatic.PneumaticChemistryMode;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
-import com.bettercontent.heatsync.api.HeatBlockEntity;
-import com.bettercontent.heatsync.api.HeatCapabilities;
-import com.bettercontent.heatsync.api.IHeatStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -48,7 +46,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEntity, IChemicalStateHandler {
+public class LatentMachineBlockEntity extends BlockEntity implements HeatReceiver, IChemicalStateHandler {
     private static final int PNEUMATIC_AIR_VOLUME = 1_000;
     private static final double CHEMICAL_TRANSFER_MASS = 64.0;
     private static final List<Direction> ALL_DIRECTIONS = List.of(Direction.values());
@@ -60,7 +58,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     private final IAirHandlerMachine pneumaticAirHandler = PneumaticRegistry.getInstance()
         .getAirHandlerMachineFactory()
         .createTierOneAirHandler(PNEUMATIC_AIR_VOLUME);
-    private LazyOptional<IHeatStorage> heatCapability = LazyOptional.of(() -> this);
     private LazyOptional<IChemicalStateHandler> chemicalCapability = LazyOptional.of(() -> this);
     private LazyOptional<IAirHandlerMachine> pneumaticAirCapability = LazyOptional.of(() -> pneumaticAirHandler);
     private final IFluidHandler fluidHandler = new GasFluidStorage(
@@ -111,9 +108,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     public @NotNull <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap, @Nullable Direction side) {
         // Forge gathers attached capabilities from BlockEntity's super-constructor,
         // before this class's lazy fields have been initialized.
-        if (!remove && heatCapability != null && cap == HeatCapabilities.INSTANCE.getHEAT()) {
-            return heatCapability.cast();
-        }
         if (!remove && chemicalCapability != null && cap == LatentCapabilities.CHEMICAL_STATE && exposesChemicalState()) {
             return chemicalCapability.cast();
         }
@@ -129,7 +123,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     @Override
     public void invalidateCaps() {
         super.invalidateCaps();
-        heatCapability.invalidate();
         chemicalCapability.invalidate();
         pneumaticAirCapability.invalidate();
         fluidCapability.invalidate();
@@ -138,7 +131,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
     @Override
     public void reviveCaps() {
         super.reviveCaps();
-        heatCapability = LazyOptional.of(() -> this);
         chemicalCapability = LazyOptional.of(() -> this);
         pneumaticAirCapability = LazyOptional.of(() -> pneumaticAirHandler);
         fluidCapability = LazyOptional.of(() -> fluidHandler);
@@ -313,37 +305,30 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         if (remainder.mass() > 0.0) source.insertChemical(remainder, false);
     }
 
-    @Override
     public float getHeat() {
         return heat;
     }
 
-    @Override
     public float getMaxHeat() {
         return configuredMaxHeat();
     }
 
-    @Override
     public float getThermalCapacity() {
         return configuredMaxHeat();
     }
 
-    @Override
     public float getThermalResistance() {
         return 1.0f;
     }
 
-    @Override
     public boolean canConnect(Direction side) {
         return true;
     }
 
-    @Override
     public boolean canAdd(Direction side) {
         return true;
     }
 
-    @Override
     public boolean canExtract(Direction side) {
         return true;
     }
@@ -356,7 +341,6 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         return accepted;
     }
 
-    @Override
     public float extractHeat(float amount, boolean simulate) {
         if (amount <= 0.0f) return 0.0f;
         float extracted = Math.min(amount, Math.max(0.0f, heat));
@@ -364,17 +348,14 @@ public class LatentMachineBlockEntity extends BlockEntity implements HeatBlockEn
         return extracted;
     }
 
-    @Override
     public void addHeat(float heat) {
         this.heat = Math.min(configuredMaxHeat(), Math.max(0.0f, this.heat + heat));
     }
 
-    @Override
     public void setHeat(float heat) {
         this.heat = Math.min(configuredMaxHeat(), Math.max(0.0f, heat));
     }
 
-    @Override
     public float maxHeat() {
         return configuredMaxHeat();
     }

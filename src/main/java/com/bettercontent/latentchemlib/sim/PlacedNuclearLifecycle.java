@@ -31,6 +31,12 @@ public final class PlacedNuclearLifecycle {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onPlaced(BlockEvent.EntityPlaceEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level) || event.isCanceled()) return;
+        Optional<RadioactiveFormResolver.ResolvedBlock> fixed =
+            RadioactiveFormResolver.INSTANCE.resolve(event.getPlacedBlock());
+        if (fixed.isPresent()) {
+            trackDisturbed(level, event.getPos(), fixed.get());
+            return;
+        }
         Optional<PlacedNuclearResolver.ResolvedPlacement> resolved =
             PlacedNuclearResolver.INSTANCE.resolve(event.getPlacedBlock());
         if (resolved.isEmpty()) return;
@@ -71,6 +77,16 @@ public final class PlacedNuclearLifecycle {
     public void onChunkLoad(ChunkEvent.Load event) {
         if (!(event.getLevel() instanceof ServerLevel level) || !(event.getChunk() instanceof LevelChunk chunk)) return;
         PlacedNuclearData data = PlacedNuclearData.get(level);
+        DisturbedRadioactiveData disturbed = DisturbedRadioactiveData.get(level);
+        for (BlockPos pos : disturbed.positionsInChunk(chunk.getPos())) {
+            Optional<RadioactiveFormResolver.ResolvedBlock> resolved =
+                RadioactiveFormResolver.INSTANCE.resolve(chunk.getBlockState(pos));
+            if (resolved.isPresent() && disturbed.matches(pos, resolved.get())) {
+                NuclearSurfaceScanner.markPlacedActive(level, pos);
+            } else {
+                disturbed.remove(pos);
+            }
+        }
         for (BlockPos pos : data.positionsInChunk(chunk.getPos())) {
             if (PlacedNuclearResolver.INSTANCE.matches(chunk.getBlockState(pos), data.get(pos).orElseThrow())) {
                 data.touch(pos, level.getGameTime());
@@ -82,12 +98,33 @@ public final class PlacedNuclearLifecycle {
         reconcileChunk(level, chunk, data);
     }
 
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onBroken(BlockEvent.BreakEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level) || event.isCanceled()) return;
+        if (DisturbedRadioactiveData.get(level).remove(event.getPos()).isPresent()) {
+            NuclearSurfaceScanner.unmarkPlaced(level, event.getPos());
+        }
+    }
+
     public static Optional<PlacedNuclearData.Entry> trackPlaced(ServerLevel level, BlockPos pos, ItemStack source) {
         PlacedNuclearData data = PlacedNuclearData.get(level);
         Optional<PlacedNuclearData.Entry> entry = data.initialize(
             pos, level.getBlockState(pos), source, level.getGameTime(), level.getSeed() ^ pos.asLong()
         );
         entry.ifPresent(ignored -> NuclearSurfaceScanner.markPlacedActive(level, pos));
+        return entry;
+    }
+
+    public static Optional<DisturbedRadioactiveData.Entry> trackDisturbed(ServerLevel level, BlockPos pos) {
+        return RadioactiveFormResolver.INSTANCE.resolve(level.getBlockState(pos))
+            .map(resolved -> trackDisturbed(level, pos, resolved));
+    }
+
+    private static DisturbedRadioactiveData.Entry trackDisturbed(
+        ServerLevel level, BlockPos pos, RadioactiveFormResolver.ResolvedBlock resolved
+    ) {
+        DisturbedRadioactiveData.Entry entry = DisturbedRadioactiveData.get(level).put(pos, resolved);
+        NuclearSurfaceScanner.markPlacedActive(level, pos);
         return entry;
     }
 

@@ -24,6 +24,12 @@ ChemLib registry data.
   detection, cleanup, and explosive behavior over Latent-owned cells.
 - Gas item escape handling for item entities and player inventories.
 - Heavy element neutron flux simulation for ChemLib element stacks.
+- Data-driven fixed radioactive-family profiles selected by exact item/block ID
+  or item/block tag, with independent radiation and radiogenic heat strengths.
+- Persistent disturbance sidecars which keep natural hosted uranium/thorium ore
+  inert while making mined, carried, dropped, contained, and replaced forms active.
+- A read-only `LatentEmissionProfiles` API for stack and placed-form consumers;
+  fixed Realistic Ores profiles do not create or require isotope NBT.
 - Create-style machine blocks:
   - `latent_chemlib:gas_capture`
   - `latent_chemlib:gas_tank`
@@ -83,6 +89,7 @@ Pack-side datapack examples are expected under:
 ```text
 data/latent_chemlib/chemical_traits/
 data/latent_chemlib/machine_profiles/
+data/latent_chemlib/nuclear_forms/
 data/latent_chemlib/scheduler_profiles/
 ```
 
@@ -113,4 +120,4 @@ For modpack and mod discussion, playtest feedback, and bug reports, join the [Be
 
 ## Identity
 
-The canonical identity is repository/artifact `latent-chemlib`, mod ID and resource namespace `latent_chemlib`, and Maven group `com.bettercontent`. The Heat Sync dependency now targets `heat_sync`.
+The canonical identity is repository/artifact `latent-chemlib`, mod ID and resource namespace `latent_chemlib`, and Maven group `com.bettercontent`. Heat integrations depend optionally on Latent's read-only emission API; Latent has no Heat Sync loader or binary dependency.

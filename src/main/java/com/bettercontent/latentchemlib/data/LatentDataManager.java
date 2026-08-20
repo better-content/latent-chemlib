@@ -199,8 +199,15 @@ public class LatentDataManager implements PreparableReloadListener {
                 for (JsonElement element : forms) {
                     if (element == null || !element.isJsonObject()) continue;
                     JsonObject json = element.getAsJsonObject();
-                    NuclearFormRule rule = new NuclearFormRule(text(json, "suffix", ""), number(json, "material_units", 1.0));
-                    if (!rule.suffix().isBlank()) loadedFormRules.add(rule);
+                    NuclearFormRule rule = new NuclearFormRule(
+                        text(json, "suffix", ""), number(json, "material_units", 1.0),
+                        text(json, "item", ""), text(json, "item_tag", ""),
+                        text(json, "block", ""), text(json, "block_tag", ""),
+                        text(json, "family", ""), number(json, "radiation_strength", 0.0),
+                        number(json, "heat_strength", 0.0), bool(json, "natural_worldgen_inert", false),
+                        bool(json, "placed_always_active", false)
+                    );
+                    if (!rule.suffix().isBlank() || rule.fixedProfile()) loadedFormRules.add(rule);
                 }
             } catch (Exception ex) {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent nuclear form file {}", id, ex);

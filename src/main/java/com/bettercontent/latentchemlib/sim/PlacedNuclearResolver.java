@@ -25,7 +25,7 @@ public final class PlacedNuclearResolver {
         if (blockItem != Items.AIR) {
             Optional<RadioactiveFormResolver.ResolvedForm> form =
                 RadioactiveFormResolver.INSTANCE.resolve(new ItemStack(blockItem));
-            if (form.isPresent()) return Optional.of(new ResolvedPlacement(blockId.toString(), form.get(), false));
+            if (form.isPresent() && !form.get().fixedProfile()) return Optional.of(new ResolvedPlacement(blockId.toString(), form.get(), false));
         }
 
         FluidState fluid = state.getFluidState();
@@ -34,7 +34,7 @@ public final class PlacedNuclearResolver {
             if (bucket != Items.AIR) {
                 Optional<RadioactiveFormResolver.ResolvedForm> form =
                     RadioactiveFormResolver.INSTANCE.resolve(new ItemStack(bucket));
-                if (form.isPresent()) return Optional.of(new ResolvedPlacement(blockId.toString(), form.get(), true));
+                if (form.isPresent() && !form.get().fixedProfile()) return Optional.of(new ResolvedPlacement(blockId.toString(), form.get(), true));
             }
         }
         return Optional.empty();

@@ -3,14 +3,12 @@ package com.bettercontent.latentchemlib.sim;
 import com.bettercontent.latentchemlib.LatentChemlibMod;
 import com.bettercontent.latentchemlib.api.IsotopeEnsemble;
 import com.bettercontent.latentchemlib.api.IsotopeItemData;
+import com.bettercontent.latentchemlib.api.LatentEmissionProfiles;
 import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.bettercontent.latentchemlib.data.LatentDataManager;
 import com.bettercontent.latentchemlib.data.NuclearDecayRule;
 import com.bettercontent.latentchemlib.data.ReactionRule;
 import com.bettercontent.latentchemlib.item.ChemicalCellItem;
-import com.bettercontent.heatsync.api.HeatBlockEntity;
-import com.bettercontent.heatsync.api.HeatCapabilities;
-import com.bettercontent.heatsync.api.IHeatStorage;
 import com.smashingmods.chemlib.api.Element;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -98,19 +96,25 @@ public class NuclearSimulationService {
         }
     }
 
-    public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+    public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, HeatReceiver heatSink, Consumer<ItemStack> outputSink) {
         return processStack(level, pos, stack, elapsedSeconds, environment(level, pos), heatSink, outputSink);
     }
 
-    public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+    public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds, NuclearEnvironment environment, HeatReceiver heatSink, Consumer<ItemStack> outputSink) {
         return processStack(level, pos, stack, elapsedSeconds, environment, heatSink, ignored -> true,
             (ignored, output) -> { if (outputSink != null) outputSink.accept(output); });
     }
 
     public ProcessStatus processStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds,
-        NuclearEnvironment environment, HeatBlockEntity heatSink, Predicate<NuclearStackEvent> eventAcceptance,
+        NuclearEnvironment environment, HeatReceiver heatSink, Predicate<NuclearStackEvent> eventAcceptance,
         BiConsumer<NuclearEventType, ItemStack> outputSink) {
         if (!canProcessStack(stack, environment)) return ProcessStatus.SKIPPED;
+        Optional<RadioactiveFormResolver.ResolvedForm> fixedForm = RadioactiveFormResolver.INSTANCE.resolve(stack)
+            .filter(RadioactiveFormResolver.ResolvedForm::fixedProfile);
+        if (fixedForm.isPresent()) {
+            return emitFixedProfile(level, pos, fixedForm.get(), stack.getCount())
+                ? ProcessStatus.UNCHANGED : ProcessStatus.BUDGET_EXHAUSTED;
+        }
         if (stack.is(LatentChemlibMod.SEALED_CHEMICAL_CELL.get())) {
             return processCellStack(level, pos, stack, elapsedSeconds, environment, heatSink, outputSink);
         }
@@ -137,13 +141,13 @@ public class NuclearSimulationService {
         return status;
     }
 
-    public ProcessStatus applyStackEvent(ServerLevel level, BlockPos pos, ItemStack stack, NuclearStackEvent nuclearEvent, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+    public ProcessStatus applyStackEvent(ServerLevel level, BlockPos pos, ItemStack stack, NuclearStackEvent nuclearEvent, HeatReceiver heatSink, Consumer<ItemStack> outputSink) {
         return applyStackEvent(level, pos, stack, nuclearEvent, heatSink,
             (ignored, output) -> { if (outputSink != null) outputSink.accept(output); });
     }
 
     public ProcessStatus applyStackEvent(ServerLevel level, BlockPos pos, ItemStack stack, NuclearStackEvent nuclearEvent,
-        HeatBlockEntity heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
+        HeatReceiver heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
         if (!reserveConsequences(level, nuclearEvent.heatEmission(), nuclearEvent.radiationLevel())) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
@@ -158,7 +162,7 @@ public class NuclearSimulationService {
         return ProcessStatus.MUTATED;
     }
 
-    public StateProcessResult processChemicalState(ServerLevel level, BlockPos pos, ChemicalState state, double elapsedSeconds, HeatBlockEntity heatSink, Consumer<ItemStack> outputSink) {
+    public StateProcessResult processChemicalState(ServerLevel level, BlockPos pos, ChemicalState state, double elapsedSeconds, HeatReceiver heatSink, Consumer<ItemStack> outputSink) {
         NuclearEnvironment environment = environment(level, pos);
         long elapsedTicks = Math.max(1L, Math.round(Math.max(0.0, elapsedSeconds) * 20.0));
         long endTick = level.getGameTime();
@@ -179,7 +183,7 @@ public class NuclearSimulationService {
         ChemicalState state,
         double elapsedSeconds,
         NuclearEnvironment environment,
-        IHeatStorage directHeat,
+        HeatReceiver directHeat,
         RandomSource random
     ) {
         return processChemicalState(level, pos, state, elapsedSeconds, environment, directHeat, null, random);
@@ -191,7 +195,7 @@ public class NuclearSimulationService {
         ChemicalState state,
         double elapsedSeconds,
         NuclearEnvironment environment,
-        IHeatStorage directHeat,
+        HeatReceiver directHeat,
         Consumer<ItemStack> outputSink,
         RandomSource random
     ) {
@@ -331,7 +335,7 @@ public class NuclearSimulationService {
 
     public double intrinsicFlux(ItemStack stack, NuclearEnvironment environment) {
         Optional<RadioactiveFormResolver.ResolvedForm> form = RadioactiveFormResolver.INSTANCE.resolve(stack);
-        if (form.isEmpty()) return 0.0;
+        if (form.isEmpty() || form.get().fixedProfile()) return 0.0;
         return neutronFlux(NuclearStackData.peekState(stack, form.get()).withMass(form.get().unitMass() * stack.getCount()), new NuclearEnvironment(
             environment.moderation(), environment.absorption(), 0.0, environment.contactFraction()
         ));
@@ -358,7 +362,7 @@ public class NuclearSimulationService {
     }
 
     private ProcessStatus processCellStack(ServerLevel level, BlockPos pos, ItemStack stack, double elapsedSeconds,
-        NuclearEnvironment environment, HeatBlockEntity heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
+        NuclearEnvironment environment, HeatReceiver heatSink, BiConsumer<NuclearEventType, ItemStack> outputSink) {
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STATE_EVALUATIONS, 1)) {
             return ProcessStatus.BUDGET_EXHAUSTED;
         }
@@ -404,7 +408,7 @@ public class NuclearSimulationService {
     }
 
     private ProcessStatus processMaterialStack(ServerLevel level, BlockPos pos, ItemStack stack,
-        RadioactiveFormResolver.ResolvedForm form, double elapsedSeconds, NuclearEnvironment environment, HeatBlockEntity heatSink) {
+        RadioactiveFormResolver.ResolvedForm form, double elapsedSeconds, NuclearEnvironment environment, HeatReceiver heatSink) {
         if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.NUCLEAR_STACK_EVALUATIONS, 1)) return ProcessStatus.BUDGET_EXHAUSTED;
         ChemicalState unitState = NuclearStackData.peekState(stack, form);
         Optional<NuclearStateEvent> event = evaluateState(unitState, elapsedSeconds, environment, level.getRandom());
@@ -498,7 +502,24 @@ public class NuclearSimulationService {
         return SimulationScheduler.INSTANCE.trySpendAll(level, costs);
     }
 
-    private float emitReserved(ServerLevel level, BlockPos pos, IHeatStorage heatSink, float heatEmission, int radiationLevel) {
+    /** Emits a fixed profile through Latent's bounded consequence budgets without touching isotope state. */
+    public boolean emitFixedProfile(ServerLevel level, BlockPos pos,
+        RadioactiveFormResolver.ResolvedForm form, int count) {
+        if (form == null || !form.fixedProfile()) return true;
+        int scale = Math.min(LatentEmissionProfiles.MAX_STACK_SCALE, Math.max(1, count));
+        double radiation = form.radiationStrength() * scale;
+        double heat = form.heatStrength() * scale;
+        EnumMap<SimulationBudget, Integer> costs = new EnumMap<>(SimulationBudget.class);
+        if (radiation > 0.0) costs.put(SimulationBudget.NUCLEAR_RADIATION_EMISSIONS, 1);
+        if (heat > 0.0) costs.put(SimulationBudget.NUCLEAR_HEAT_EMISSIONS, 1);
+        if (!SimulationScheduler.INSTANCE.trySpendAll(level, costs)) return false;
+        if (pos != null && (radiation > 0.0 || heat > 0.0)) {
+            LatentRadiationService.emit(level, pos, radiation, heat);
+        }
+        return true;
+    }
+
+    private float emitReserved(ServerLevel level, BlockPos pos, HeatReceiver heatSink, float heatEmission, int radiationLevel) {
         float retained = heatEmission > 0.0f ? distributeHeat(level, pos, heatSink, heatEmission) : 0.0f;
         if (pos != null && radiationLevel > 0) LatentRadiationService.emit(level, pos, radiationLevel);
         return retained;
@@ -558,17 +579,15 @@ public class NuclearSimulationService {
         }
     }
 
-    private static float distributeHeat(ServerLevel level, BlockPos pos, IHeatStorage direct, float heatEmission) {
-        List<IHeatStorage> targets = new ArrayList<>();
-        Set<IHeatStorage> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+    private static float distributeHeat(ServerLevel level, BlockPos pos, HeatReceiver direct, float heatEmission) {
+        List<HeatReceiver> targets = new ArrayList<>();
+        Set<HeatReceiver> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         if (direct != null && seen.add(direct)) targets.add(direct);
         if (pos != null) {
             for (Direction direction : Direction.values()) {
                 BlockEntity adjacent = level.getBlockEntity(pos.relative(direction));
                 if (adjacent == null) continue;
-                adjacent.getCapability(HeatCapabilities.INSTANCE.getHEAT(), direction.getOpposite()).ifPresent(storage -> {
-                    if (seen.add(storage)) targets.add(storage);
-                });
+                if (adjacent instanceof HeatReceiver receiver && seen.add(receiver)) targets.add(receiver);
             }
         }
         float remaining = heatEmission;
@@ -612,18 +631,12 @@ public class NuclearSimulationService {
         return (int) Math.min(24.0, Math.max(1.0, flux / 1_200.0));
     }
 
-    public static HeatBlockEntity heatSink(BlockEntity entity) {
-        if (entity == null) return null;
-        if (entity instanceof HeatBlockEntity heatBlockEntity) return heatBlockEntity;
-        return entity.getCapability(HeatCapabilities.INSTANCE.getHEAT())
-            .map(storage -> storage instanceof HeatBlockEntity heatBlockEntity ? heatBlockEntity : null)
-            .orElse(null);
+    public static HeatReceiver heatSink(BlockEntity entity) {
+        return entity instanceof HeatReceiver receiver ? receiver : null;
     }
 
-    public static IHeatStorage heatStorage(BlockEntity entity) {
-        if (entity == null) return null;
-        if (entity instanceof IHeatStorage heatStorage) return heatStorage;
-        return entity.getCapability(HeatCapabilities.INSTANCE.getHEAT()).resolve().orElse(null);
+    public static HeatReceiver heatStorage(BlockEntity entity) {
+        return heatSink(entity);
     }
 
     private static void bindDiscreteOutputState(
