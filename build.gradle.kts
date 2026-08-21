@@ -118,6 +118,10 @@ dependencies {
     minecraft("net.minecraftforge:forge:$minecraftVersion-$forgeVersion")
 
     implementation("thedarkcolour:kotlinforforge:$kotlinForForgeVersion")
+    // Heat Sync owns the pack's thermal transport API.  This is intentionally typed,
+    // not an event/reflection bridge, so generated HU cannot silently disappear.
+    compileOnly(files("../heat-sync/build/libs/heat-sync-0.1.0.jar"))
+    runtimeOnly(files("../heat-sync/build/libs/heat-sync-0.1.0.jar"))
 
     implementation(deobf("com.simibubi.create:create-$minecraftVersion:$createMavenVersion:slim"))
     implementation(deobf("net.createmod.ponder:Ponder-Forge-$minecraftVersion:$ponderVersion"))

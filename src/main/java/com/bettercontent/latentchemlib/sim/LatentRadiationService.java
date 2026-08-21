@@ -1,6 +1,7 @@
 package com.bettercontent.latentchemlib.sim;
 
 import com.bettercontent.latentchemlib.LatentChemlibMod;
+import com.bettercontent.heatsync.api.ThermalApi;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.eventbus.api.Event;
@@ -15,6 +16,9 @@ public final class LatentRadiationService {
     }
 
     public static void emit(ServerLevel level, BlockPos pos, double radiationStrength, double heatStrength) {
+        // Fixed radiogenic forms are an HU source.  Only genuinely unaccepted heat is
+        // lost to the environment; nuclear state emission retains its own remainder.
+        if (heatStrength > 0.0) ThermalApi.distributeHeat(level, pos, heatStrength);
         MinecraftForge.EVENT_BUS.post(new RadiationEmissionEvent(level, pos, radiationStrength, heatStrength));
         LatentChemlibMod.LOGGER.debug("Nuclear fixed emission radiation={} heat={} at {}", radiationStrength, heatStrength, pos);
     }

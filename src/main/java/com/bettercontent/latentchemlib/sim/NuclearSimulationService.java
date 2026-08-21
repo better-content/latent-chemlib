@@ -1,5 +1,6 @@
 package com.bettercontent.latentchemlib.sim;
 
+
 import com.bettercontent.latentchemlib.LatentChemlibMod;
 import com.bettercontent.latentchemlib.api.IsotopeEnsemble;
 import com.bettercontent.latentchemlib.api.IsotopeItemData;
@@ -595,7 +596,11 @@ public class NuclearSimulationService {
             float fairShare = remaining / (targets.size() - index);
             remaining -= targets.get(index).addHeat(fairShare, false);
         }
-        return remaining;
+        if (remaining <= 0.0f || pos == null) return remaining;
+        final double unaccepted = com.bettercontent.heatsync.api.ThermalApi.distributeHeat(level, pos, remaining);
+        // A nuclear event keeps only heat that no chemical receiver and no Heat Sync
+        // body accepted, preserving energy in ChemicalState for its next simulation.
+        return (float) Math.max(0.0, unaccepted);
     }
 
     private static ChemicalState retainHeat(ChemicalState state, float retained) {

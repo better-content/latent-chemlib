@@ -34,6 +34,13 @@ ordering="NONE"
 side="BOTH"
 
 [[dependencies.${modId}]]
+modId="heat_sync"
+mandatory=true
+versionRange="[0.1.0,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${modId}]]
 modId="create"
 mandatory=true
 versionRange="[${createReleaseVersion},6.1.0)"
