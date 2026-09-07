@@ -1,8 +1,6 @@
 package com.bettercontent.latentchemlib.sim;
 
 public enum SimulationBudget {
-    MACHINE_UPDATES,
-    NEIGHBOR_OPS,
     ESCAPE_SCANS,
     NUCLEAR_SURFACE_SCANS,
     NUCLEAR_STACK_EVALUATIONS,

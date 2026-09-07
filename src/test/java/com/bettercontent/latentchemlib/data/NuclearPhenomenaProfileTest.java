@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class NuclearPhenomenaProfileTest {
     @Test
-    void defaultsKeepEmergentThresholdsIndependentOfMachineProfiles() {
+    void defaultsKeepWorldNuclearThresholdsExplicit() {
         NuclearPhenomenaProfile profile = NuclearPhenomenaProfile.defaults();
 
         assertEquals(256.0, profile.fissionMinimumFuelMass());
@@ -17,8 +17,6 @@ class NuclearPhenomenaProfileTest {
         assertEquals(4.0, profile.decayMinimumSpecificHeatPerSecond());
         assertEquals(34.5, profile.fissionMinimumFissilityIndex());
         assertEquals(0.30, profile.fissionMinimumContactFraction());
-        assertEquals(8_000.0, profile.fusionMinimumTemperature());
-        assertEquals(4.0, profile.fusionMinimumDensity());
     }
 
     @Test
@@ -26,12 +24,10 @@ class NuclearPhenomenaProfileTest {
         JsonObject json = new JsonObject();
         json.addProperty("schema", NuclearPhenomenaProfile.SCHEMA);
         json.addProperty("fission_minimum_fuel_mass", 512.0);
-        json.addProperty("fusion_minimum_temperature", 12_000.0);
 
         NuclearPhenomenaProfile profile = NuclearPhenomenaProfile.fromJson(json);
 
         assertEquals(512.0, profile.fissionMinimumFuelMass());
-        assertEquals(12_000.0, profile.fusionMinimumTemperature());
         assertEquals(NuclearPhenomenaProfile.defaults().fissionBatchMass(), profile.fissionBatchMass());
     }
 }

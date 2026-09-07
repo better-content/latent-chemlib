@@ -1,4 +1,3 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.util.zip.ZipFile
 
 plugins {
@@ -6,7 +5,6 @@ plugins {
     eclipse
     `maven-publish`
     jacoco
-    id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("net.minecraftforge.gradle") version "[6.0,6.2)"
     id("org.spongepowered.mixin") version "0.7.+"
 }
@@ -14,19 +12,14 @@ plugins {
 val minecraftVersion = property("minecraft_version") as String
 val forgeVersion = property("forge_version") as String
 val kotlinForForgeVersion = property("kotlinforforge_version") as String
-val createReleaseVersion = property("create_release_version") as String
 val createMavenVersion = property("create_maven_version") as String
 val ponderVersion = property("ponder_version") as String
 val flywheelVersion = property("flywheel_version") as String
 val registrateVersion = property("registrate_version") as String
 val chemlibVersion = property("chemlib_version") as String
 val chemlibCurseFileId = property("chemlib_curse_file_id") as String
-val emiVersion = property("emi_version") as String
-val emiCurseFileId = property("emi_curse_file_id") as String
-val jeiVersion = property("jei_version") as String
 val adpotherVersion = property("adpother_version") as String
 val forgeEndertechVersion = property("forgeendertech_version") as String
-val pneumaticCraftVersion = property("pneumaticcraft_version") as String
 val modId = property("mod_id") as String
 val modName = property("mod_name") as String
 val modVersion = property("mod_version") as String
@@ -50,10 +43,6 @@ fun deobf(notation: Any): Any =
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
     withSourcesJar()
-}
-
-kotlin {
-    jvmToolchain(17)
 }
 
 minecraft {
@@ -123,34 +112,27 @@ repositories {
 dependencies {
     minecraft("net.minecraftforge:forge:$minecraftVersion-$forgeVersion")
 
-    implementation("thedarkcolour:kotlinforforge:$kotlinForForgeVersion")
     // Heat Sync owns the pack's thermal transport API.  This is intentionally typed,
     // not an event/reflection bridge, so generated HU cannot silently disappear.
     compileOnly(deobf("local:heat-sync:0.1.0"))
     runtimeOnly(deobf("local:heat-sync:0.1.0"))
 
-    implementation(deobf("com.simibubi.create:create-$minecraftVersion:$createMavenVersion:slim"))
-    implementation(deobf("net.createmod.ponder:Ponder-Forge-$minecraftVersion:$ponderVersion"))
-    implementation(deobf("io.github.llamalad7:mixinextras-forge:0.3.6"))
-    annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
-    compileOnly(deobf("dev.engine-room.flywheel:flywheel-forge-api-$minecraftVersion:$flywheelVersion"))
+    // Latent does not integrate with Create or Kotlin for Forge, but the local
+    // Heat Sync runtime used by the repository gate has those mandatory dependencies.
+    runtimeOnly("thedarkcolour:kotlinforforge:$kotlinForForgeVersion")
+    runtimeOnly(deobf("com.simibubi.create:create-$minecraftVersion:$createMavenVersion:slim"))
+    runtimeOnly(deobf("net.createmod.ponder:Ponder-Forge-$minecraftVersion:$ponderVersion"))
+    runtimeOnly(deobf("io.github.llamalad7:mixinextras-forge:0.3.6"))
     runtimeOnly(deobf("dev.engine-room.flywheel:flywheel-forge-$minecraftVersion:$flywheelVersion"))
-    implementation(deobf("com.tterrag.registrate:Registrate:$registrateVersion"))
+    runtimeOnly(deobf("com.tterrag.registrate:Registrate:$registrateVersion"))
+
+    annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
 
     implementation(deobf("curse.maven:chemlib-340666:$chemlibCurseFileId"))
     compileOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2294"))
     runtimeOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2294"))
     compileOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2294"))
     runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2294"))
-    compileOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
-    runtimeOnly(deobf("local:pneumaticcraft-repressurized:$pneumaticCraftVersion"))
-    compileOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
-    runtimeOnly(deobf("curse.maven:emi-580555:$emiCurseFileId"))
-    compileOnly(deobf("mezz.jei:jei-$minecraftVersion-common-api:$jeiVersion"))
-    compileOnly(deobf("mezz.jei:jei-$minecraftVersion-forge-api:$jeiVersion"))
-    runtimeOnly(deobf("mezz.jei:jei-$minecraftVersion-forge:$jeiVersion"))
-
-    testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
@@ -158,13 +140,8 @@ tasks.processResources {
     val props = mapOf(
         "minecraftVersion" to minecraftVersion,
         "forgeVersion" to forgeVersion,
-        "kotlinForForgeVersion" to kotlinForForgeVersion,
-        "createReleaseVersion" to createReleaseVersion,
         "chemlibVersion" to chemlibVersion,
-        "emiVersion" to emiVersion,
-        "jeiVersion" to jeiVersion,
         "adpotherVersion" to adpotherVersion,
-        "pneumaticCraftVersion" to pneumaticCraftVersion,
         "modId" to modId,
         "modName" to modName,
         "modVersion" to modVersion,
@@ -255,10 +232,6 @@ val verifyRuntimeJar by tasks.registering {
     }
 }
 
-tasks.withType<KotlinCompile>().configureEach {
-    kotlinOptions.jvmTarget = "17"
-}
-
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
@@ -280,15 +253,11 @@ tasks.jacocoTestReport {
         files(
             sourceSets.main.get().output.asFileTree.matching {
                 include("com/bettercontent/latentchemlib/data/ChemicalTraits.class")
-                include("com/bettercontent/latentchemlib/data/MachineProfile.class")
                 include("com/bettercontent/latentchemlib/data/NuclearDecayRule.class")
                 include("com/bettercontent/latentchemlib/data/NumericCurve.class")
                 include("com/bettercontent/latentchemlib/data/PresetCurve.class")
                 include("com/bettercontent/latentchemlib/data/SchedulerProfile.class")
                 include("com/bettercontent/latentchemlib/sim/ChemicalState.class")
-                include("com/bettercontent/latentchemlib/sim/ChamberPacingSimulator.class")
-                include("com/bettercontent/latentchemlib/sim/MachineTransfer.class")
-                include("com/bettercontent/latentchemlib/sim/ReactionRuleSelector.class")
                 include("com/bettercontent/latentchemlib/sim/EmergentMath.class")
                 include("com/bettercontent/latentchemlib/sim/SimulationBudget.class")
                 include("com/bettercontent/latentchemlib/sim/SimulationBudgetLedger.class")

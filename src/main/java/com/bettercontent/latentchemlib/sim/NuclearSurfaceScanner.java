@@ -212,7 +212,7 @@ public class NuclearSurfaceScanner {
             advectInLava(level, item);
             ItemStack stack = item.getItem();
             NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
-                level, item.blockPosition(), stack, 1.0, null,
+                level, item.blockPosition(), stack, 1.0,
                 output -> Containers.dropItemStack(level, item.getX(), item.getY(), item.getZ(), output)
             );
             if (stack.isEmpty()) {
@@ -295,7 +295,6 @@ public class NuclearSurfaceScanner {
         NuclearSimulationService.StateProcessResult result = NuclearSimulationService.INSTANCE.processPlacedState(
             level, pos, entry.state(), elapsedTicks / 20.0,
             NuclearSimulationService.environment(level, pos),
-            NuclearSimulationService.heatStorage(level.getBlockEntity(pos)),
             net.minecraft.util.RandomSource.create(LoadedExposureClock.deterministicSeed(exposure, "placed-state"))
         );
         if (result.budgetExhausted()) {
@@ -370,14 +369,13 @@ public class NuclearSurfaceScanner {
     private static boolean hasRelevantStack(IItemHandler handler) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack stack = handler.getStackInSlot(slot);
-            if (NuclearSimulationService.INSTANCE.isNuclearRelevant(stack) || NuclearSimulationService.INSTANCE.hasCaptureProduct(stack)) return true;
+            if (NuclearSimulationService.INSTANCE.isNuclearRelevant(stack)) return true;
         }
         return false;
     }
 
     private static boolean isRelevant(ItemStack stack) {
-        return NuclearSimulationService.INSTANCE.isNuclearRelevant(stack)
-            || NuclearSimulationService.INSTANCE.hasCaptureProduct(stack);
+        return NuclearSimulationService.INSTANCE.isNuclearRelevant(stack);
     }
 
     private ActiveHolderSet<UUID> droppedItems(ServerLevel level) {
@@ -402,9 +400,7 @@ public class NuclearSurfaceScanner {
 
     private NuclearSimulationService.ProcessStatus processPlayerStack(ServerLevel level, ServerPlayer player, Inventory inventory, int slot, ItemStack stack, NuclearSimulationService.NuclearEnvironment environment) {
         NuclearSimulationService.ProcessStatus status = NuclearSimulationService.INSTANCE.processStack(
-            level, player.blockPosition(), stack, PLAYER_PERIOD_TICKS / 20.0, environment, null,
-            event -> event.type() != NuclearSimulationService.NuclearEventType.CAPTURE
-                || canPlaceAdjacent(inventory, slot, outputStack(event)),
+            level, player.blockPosition(), stack, PLAYER_PERIOD_TICKS / 20.0, environment,
             (type, output) -> placePlayerOutput(player, inventory, slot, type, output)
         );
         inventory.setItem(slot, stack);
@@ -414,9 +410,7 @@ public class NuclearSurfaceScanner {
 
     private NuclearSimulationService.ProcessStatus processHandlerStack(ServerLevel level, BlockEntity blockEntity, IItemHandlerModifiable handler, int slot, ItemStack working, NuclearSimulationService.NuclearEnvironment environment) {
         return NuclearSimulationService.INSTANCE.processStack(
-            level, blockEntity.getBlockPos(), working, 1.0, environment, NuclearSimulationService.heatSink(blockEntity),
-            event -> event.type() != NuclearSimulationService.NuclearEventType.CAPTURE
-                || canPlaceAdjacent(handler, slot, outputStack(event)),
+            level, blockEntity.getBlockPos(), working, 1.0, environment,
             (type, output) -> placeHandlerOutput(level, blockEntity.getBlockPos(), handler, slot, type, output)
         );
     }
@@ -450,25 +444,9 @@ public class NuclearSurfaceScanner {
         return slots;
     }
 
-    private static boolean canPlaceAdjacent(Inventory inventory, int slot, ItemStack output) {
-        for (int candidate : adjacentSlots(slot, inventory.getContainerSize())) {
-            if (canInsertIntoStack(inventory.getItem(candidate), output)) return true;
-        }
-        return false;
-    }
-
-    private static boolean canPlaceAdjacent(IItemHandler handler, int slot, ItemStack output) {
-        for (int candidate : adjacentSlots(slot, handler.getSlots())) {
-            ItemStack remaining = handler.insertItem(candidate, output.copy(), true);
-            if (remaining.isEmpty()) return true;
-        }
-        return false;
-    }
-
     private static void placePlayerOutput(ServerPlayer player, Inventory inventory, int sourceSlot, NuclearSimulationService.NuclearEventType type, ItemStack output) {
         if (output.isEmpty()) return;
         boolean inserted = switch (type) {
-            case CAPTURE -> insertAdjacent(inventory, sourceSlot, output);
             case FISSION -> insertRandom(inventory, output, player.getRandom());
             case DECAY -> inventory.add(output);
         };
@@ -478,29 +456,12 @@ public class NuclearSurfaceScanner {
     private static void placeHandlerOutput(ServerLevel level, BlockPos pos, IItemHandlerModifiable handler, int sourceSlot, NuclearSimulationService.NuclearEventType type, ItemStack output) {
         if (output.isEmpty()) return;
         boolean inserted = switch (type) {
-            case CAPTURE -> insertAdjacent(handler, sourceSlot, output);
             case FISSION -> insertRandom(handler, output, level.getRandom());
             case DECAY -> insert(handler, output);
         };
         if (!inserted && !output.isEmpty()) {
             Containers.dropItemStack(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, output);
         }
-    }
-
-    private static boolean insertAdjacent(Inventory inventory, int sourceSlot, ItemStack output) {
-        for (int candidate : adjacentSlots(sourceSlot, inventory.getContainerSize())) {
-            if (insertIntoInventorySlot(inventory, candidate, output)) return true;
-        }
-        return false;
-    }
-
-    private static boolean insertAdjacent(IItemHandler handler, int sourceSlot, ItemStack output) {
-        for (int candidate : adjacentSlots(sourceSlot, handler.getSlots())) {
-            ItemStack remaining = handler.insertItem(candidate, output, false);
-            if (remaining.isEmpty()) return true;
-            output.setCount(remaining.getCount());
-        }
-        return false;
     }
 
     private static boolean insertRandom(Inventory inventory, ItemStack output, net.minecraft.util.RandomSource random) {
@@ -557,10 +518,6 @@ public class NuclearSurfaceScanner {
         if (target.isEmpty()) return true;
         return ItemStack.isSameItemSameTags(target, output)
             && target.getCount() < Math.min(target.getMaxStackSize(), output.getMaxStackSize());
-    }
-
-    private static ItemStack outputStack(NuclearSimulationService.NuclearStackEvent event) {
-        return new ItemStack(event.outputItem(), event.outputCount());
     }
 
 }

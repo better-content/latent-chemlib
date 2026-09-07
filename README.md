@@ -1,9 +1,8 @@
 # Latent ChemLib
 
-Latent ChemLib is a Forge `1.20.1` mod for file-configured ChemLib matter
-simulation. It provides containment machinery, high energy reaction math, gas
-item escape behavior, an AdPother atmospheric boundary, and heavy-element
-neutron economy hooks for expert modpacks.
+Latent ChemLib is a Forge `1.20.1` bridge for the parts of ChemLib matter that
+need world consequences: gas escape, radioactive decay, neutron-driven fission,
+and radioactive-form emission profiles.
 
 The design goal is emergent behavior from numeric traits and curve intercepts,
 not hard-coded per-element special cases. Pack authors can tune chemical
@@ -12,9 +11,8 @@ ChemLib registry data.
 
 ## Current Features
 
-- A narrow atmospheric boundary that turns contained ChemLib gases into native
-  AdPother pollutant blocks and captures native pollutant blocks back into the
-  explicit gas-capture machine.
+- A one-way atmospheric boundary that turns escaped ChemLib gases into native
+  AdPother pollutant blocks.
 - A conserved bridge ratio of 16 Latent mass per AdPother unit. Release is
   preflighted atomically, while AdPother remains the sole authority for ambient
   density, movement, wind, spreading, impacts, protection, detection,
@@ -27,24 +25,12 @@ ChemLib registry data.
   inert while making mined, carried, dropped, contained, and replaced forms active.
 - A read-only `LatentEmissionProfiles` API for stack and placed-form consumers;
   fixed Realistic Ores profiles do not create or require isotope NBT.
-- Create-style machine blocks:
-  - `latent_chemlib:gas_capture`
-  - `latent_chemlib:gas_tank`
-  - `latent_chemlib:gas_reaction_chamber`
-  - `latent_chemlib:gas_release`
-  - `latent_chemlib:pneumatic_chemical_tube`
-  - `latent_chemlib:dry_air_separator`
-- A selectable PNCR boundary whose default air mode participates in the native
-  pressure network and whose chemical mode transports the complete Latent
-  multi-species state. The native-air and chemical ledgers remain separate
-  across mode changes; there is no implicit compatibility conversion.
-- A dry-air separator which consumes finite native PNCR compressed-air batches
-  and produces a conserved nitrogen/oxygen/argon/carbon-dioxide mixture through
-  Latent's multi-species capability.
+- No blocks, items, fluid stores, chemical capabilities, or generic reaction
+  machines. The owning mods remain authoritative for containment and processing.
 - File-based datapack reload support for:
   - `data/latent_chemlib/chemical_traits/*.json`
   - `data/latent_chemlib/scheduler_profiles/default.json`
-- Server tick budget scheduler for contained-machine and neutron workloads.
+- Server tick budgets for gas-escape and nuclear workloads.
 - Unit tests for numeric curves and emergent simulation math.
 
 ## Tech Stack
@@ -52,12 +38,9 @@ ChemLib registry data.
 - Minecraft `1.20.1`
 - Forge `47.4.13`
 - Java `17`
-- Kotlin for Forge `4.11.0`
-- Create `6.0.8`
 - ChemLib `2.0.19`
 - Heat Sync (mandatory typed thermal API)
-- PneumaticCraft: Repressurized `6.0.22`
-- EMI and JEI as optional client integrations
+- AdPother (mandatory atmospheric authority)
 
 ## Development
 
@@ -70,13 +53,10 @@ Common tasks:
 ./gradlew runServer
 ```
 
-The JVM unit coverage gate is intentionally focused on the pure simulation and
-configuration core. Forge event handlers and block entities are integration
-boundaries. The bundled Forge GameTests cover the current in-world block entity
-surfaces: native atmospheric handoff, machine block entity creation, capture, release,
-reaction chamber agitation, PNCR pressure-network participation, selectable
-transport authority, lossless mixture movement, and finite dry-air separation.
-`verifyFast` runs the JVM coverage gate. `verifyFull` adds the headless Forge GameTest pass without the old property-driven rerun path.
+The JVM unit coverage gate is intentionally focused on pure isotope, decay,
+fission, gas-boundary, and scheduling logic. Forge event handlers are thin
+integration boundaries. `verifyFast` runs the JVM coverage gate; `verifyFull`
+also builds the runtime JAR and starts the headless Forge GameTest server.
 
 ## Pack Configuration
 
@@ -84,31 +64,26 @@ Pack-side datapack examples are expected under:
 
 ```text
 data/latent_chemlib/chemical_traits/
-data/latent_chemlib/machine_profiles/
 data/latent_chemlib/nuclear_forms/
+data/latent_chemlib/nuclear_decay/
+data/latent_chemlib/nuclear_phenomena/
 data/latent_chemlib/scheduler_profiles/
 ```
 
-Traits expose numeric levers such as atomic number, atomic mass, base state,
-phase energy, volatility, thermal conductivity, heat capacity, instability,
-absorption, neutron yield, and curve definitions. Scheduler profiles cap per
-dimension and per second simulation work so large packs can tune the system
-without recompiling the mod. Machine profiles separately own gameplay
-capabilities and pacing: default and reaction-chamber heat capacity, chamber
-charge capacity, contained mass capacity, and per-second chamber temperature,
-charge, and energy conditioning rates. Machine profiles use the explicit
-`bc.latent_chemlib.machine_profile.v1` schema.
+Traits expose volatility, thermal, instability, absorption, and scattering
+levers. Scheduler profiles cap per-dimension gas and nuclear work. Nuclear form,
+decay, and phenomena files define radioactive identity and consequences without
+creating another processing system.
 
 ## Notes
 
 - Mod metadata is sourced from `gradle.properties`.
-- The mod currently provides the simulation foundation and block/item registry.
-  Pack-specific recipes, progression gates, and datapack tuning live in the
-  consuming pack.
-- Complex mixtures, temperature, charge, reaction, and nuclear state remain
-  contained in machines and items. Atmospheric conversion uses 16 Latent mass
-  per whole AdPother unit, discards sub-unit release remainder, and separates
-  mixtures into distinct native pollutant blocks.
+- The mod deliberately has no block/item registry. Pack-specific processing and
+  progression live in the consuming pack and the owning technology mods.
+- Atmospheric conversion uses 16 Latent mass per whole AdPother unit and hands
+  accepted matter off atomically; after that boundary AdPother is authoritative.
+- Nuclear heat is offered only through Heat Sync. Heat that Heat Sync cannot
+  accept remains in the simulated material's energy state.
 
 ## Community and support
 

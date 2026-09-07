@@ -89,24 +89,6 @@ public final class AdpotherGasBoundary {
         );
     }
 
-    /** Removes native pollution from one cell and returns its contained representation. */
-    public ChemicalState capture(ServerLevel level, BlockPos pos, int requestedUnits) {
-        int requested = Math.max(0, requestedUnits);
-        if (requested == 0 || !level.isLoaded(pos)) return ChemicalState.empty();
-        BlockState state = level.getBlockState(pos);
-        if (!(state.getBlock() instanceof Pollutant<?> pollutant)) return ChemicalState.empty();
-        int extracted = pollutant.spend(level, pos, requested);
-        if (extracted <= 0) return ChemicalState.empty();
-        return new ChemicalState(
-            chemicalId(pollutant),
-            extracted * MASS_PER_ADPOTHER_UNIT,
-            extracted,
-            293.0,
-            0.0,
-            0.0
-        );
-    }
-
     public String chemicalId(Pollutant<?> pollutant) {
         ResourceLocation pollutantId = ForgeRegistries.BLOCKS.getKey(pollutant);
         String path = pollutantId == null ? pollutant.getSimpleName() : pollutantId.getPath();

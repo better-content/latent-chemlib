@@ -48,8 +48,6 @@ public class SimulationBudgetLedger<K> {
 
     public static int limit(SimulationBudget budget, SchedulerProfile profile) {
         return switch (budget) {
-            case MACHINE_UPDATES -> profile.machineUpdatesPerSecond();
-            case NEIGHBOR_OPS -> profile.neighborOpsPerSecond();
             case ESCAPE_SCANS -> profile.escapeScansPerSecond();
             case NUCLEAR_SURFACE_SCANS -> profile.nuclearSurfaceScansPerSecond();
             case NUCLEAR_STACK_EVALUATIONS -> profile.nuclearStackEvaluationsPerSecond();

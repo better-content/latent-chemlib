@@ -1,6 +1,5 @@
 package com.bettercontent.latentchemlib.sim;
 
-import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.bettercontent.latentchemlib.data.NuclearDecayRule;
 import com.bettercontent.latentchemlib.data.NuclearPhenomenaProfile;
 import org.junit.jupiter.api.Test;
@@ -90,23 +89,4 @@ class NuclearPhenomenaMathTest {
         ).isEmpty());
     }
 
-    @Test
-    void fusionRequiresActuallyOpposedHotDenseEnergeticCompatibleStreams() {
-        ChemicalState hot = new ChemicalState("chemlib:hydrogen", 16.0, 8.0, 9_000.0, 2.0, 80_000.0);
-        ChemicalState cold = new ChemicalState("chemlib:hydrogen", 16.0, 8.0, 300.0, 0.0, 80_000.0);
-        var profile = NuclearPhenomenaProfile.defaults();
-
-        assertTrue(NuclearPhenomenaMath.fusion(hot, hot, ChemicalTraits.fallback(), false, profile).isEmpty());
-        assertTrue(NuclearPhenomenaMath.fusion(hot, cold, ChemicalTraits.fallback(), true, profile).isEmpty());
-        var result = NuclearPhenomenaMath.fusion(hot, hot, ChemicalTraits.fallback(), true, profile).orElseThrow();
-
-        assertEquals("chemlib:helium", result.product().chemicalId());
-        assertEquals(result.consumedMass(), result.product().mass() + result.massDefect(), EPSILON);
-        assertEquals(hot.mass() * 2.0,
-            result.firstRemainder().mass() + result.secondRemainder().mass() + result.product().mass() + result.massDefect(), EPSILON);
-        assertEquals(hot.mass() * 2.0 * 1_000_000.0 + hot.energy() * 2.0,
-            (result.firstRemainder().mass() + result.secondRemainder().mass() + result.product().mass()) * 1_000_000.0
-                + result.firstRemainder().energy() + result.secondRemainder().energy() + result.product().energy() + result.heatEmission(),
-            1.0e-6);
-    }
 }

@@ -26,9 +26,7 @@ public class LatentDataManager implements PreparableReloadListener {
 
     private volatile Map<String, ChemicalTraits> traits = Map.of();
     private volatile SchedulerProfile schedulerProfile = SchedulerProfile.defaults();
-    private volatile MachineProfile machineProfile = MachineProfile.defaults();
     private volatile NuclearPhenomenaProfile nuclearPhenomenaProfile = NuclearPhenomenaProfile.defaults();
-    private volatile List<ReactionRule> reactionRules = List.of();
     private volatile List<NuclearDecayRule> nuclearDecayRules = List.of();
     private volatile List<NuclearFormRule> nuclearFormRules = List.of();
     private volatile IsotopeCatalog isotopeCatalog = IsotopeCatalog.empty();
@@ -42,16 +40,8 @@ public class LatentDataManager implements PreparableReloadListener {
         return schedulerProfile;
     }
 
-    public MachineProfile machineProfile() {
-        return machineProfile;
-    }
-
     public NuclearPhenomenaProfile nuclearPhenomenaProfile() {
         return nuclearPhenomenaProfile;
-    }
-
-    public List<ReactionRule> reactionRules() {
-        return reactionRules;
     }
 
     public List<NuclearDecayRule> nuclearDecayRules() {
@@ -73,16 +63,13 @@ public class LatentDataManager implements PreparableReloadListener {
             .thenAcceptAsync(snapshot -> {
                 traits = snapshot.traits();
                 schedulerProfile = snapshot.schedulerProfile();
-                machineProfile = snapshot.machineProfile();
                 nuclearPhenomenaProfile = snapshot.nuclearPhenomenaProfile();
-                reactionRules = snapshot.reactionRules();
                 nuclearDecayRules = snapshot.nuclearDecayRules();
                 nuclearFormRules = snapshot.nuclearFormRules();
                 isotopeCatalog = snapshot.isotopeCatalog();
                 LatentChemlibMod.LOGGER.info(
-                    "Loaded {} latent chemical trait overrides, {} reaction rules, {} nuclear decay rules, {} nuclear form rules, and {} known isotopes",
+                    "Loaded {} latent chemical trait overrides, {} nuclear decay rules, {} nuclear form rules, and {} known isotopes",
                     traits.size(),
-                    reactionRules.size(),
                     nuclearDecayRules.size(),
                     nuclearFormRules.size(),
                     isotopeCatalog.allKnown().size()
@@ -92,7 +79,6 @@ public class LatentDataManager implements PreparableReloadListener {
 
     private Snapshot load(ResourceManager resourceManager) {
         Map<String, ChemicalTraits> loadedTraits = new HashMap<>();
-        java.util.ArrayList<ReactionRule> loadedRules = new java.util.ArrayList<>();
         java.util.ArrayList<NuclearDecayRule> loadedDecayRules = new java.util.ArrayList<>();
         java.util.ArrayList<NuclearFormRule> loadedFormRules = new java.util.ArrayList<>();
         Map<String, IsotopeDefinition> loadedIsotopes = new HashMap<>();
@@ -111,8 +97,6 @@ public class LatentDataManager implements PreparableReloadListener {
             try (var reader = entry.getValue().openAsReader()) {
                 JsonObject json = GSON.fromJson(reader, JsonObject.class);
                 profile = new SchedulerProfile(
-                    integer(json, "machine_updates_per_second", profile.machineUpdatesPerSecond()),
-                    integer(json, "neighbor_ops_per_second", profile.neighborOpsPerSecond()),
                     integer(json, "escape_scans_per_second", profile.escapeScansPerSecond()),
                     integer(json, "nuclear_surface_scans_per_second", integer(json, "nuclear_inventory_scans_per_second", profile.nuclearSurfaceScansPerSecond())),
                     integer(json, "nuclear_stack_evaluations_per_second", profile.nuclearStackEvaluationsPerSecond()),
@@ -123,19 +107,6 @@ public class LatentDataManager implements PreparableReloadListener {
                 );
             } catch (Exception ex) {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent scheduler profile {}", entry.getKey(), ex);
-            }
-        }
-        MachineProfile loadedMachineProfile = MachineProfile.defaults();
-        for (var entry : resourceManager.listResources("machine_profiles", id -> id.getPath().endsWith("default.json")).entrySet()) {
-            try (var reader = entry.getValue().openAsReader()) {
-                JsonObject json = GSON.fromJson(reader, JsonObject.class);
-                if (MachineProfile.hasSupportedSchema(json)) {
-                    loadedMachineProfile = MachineProfile.fromJson(json);
-                } else {
-                    LatentChemlibMod.LOGGER.warn("Ignoring latent machine profile with unsupported or missing schema {}", entry.getKey());
-                }
-            } catch (Exception ex) {
-                LatentChemlibMod.LOGGER.warn("Ignoring invalid latent machine profile {}", entry.getKey(), ex);
             }
         }
         NuclearPhenomenaProfile loadedNuclearPhenomenaProfile = NuclearPhenomenaProfile.defaults();
@@ -151,18 +122,6 @@ public class LatentDataManager implements PreparableReloadListener {
                 LatentChemlibMod.LOGGER.warn("Ignoring invalid latent nuclear phenomena profile {}", entry.getKey(), ex);
             }
         }
-        resourceManager.listResources("reaction_rules", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
-            try (var reader = resource.openAsReader()) {
-                JsonElement root = GSON.fromJson(reader, JsonElement.class);
-                JsonArray rules = root.isJsonArray() ? root.getAsJsonArray() : root.getAsJsonObject().getAsJsonArray("rules");
-                if (rules == null) return;
-                for (JsonElement element : rules) {
-                    if (element != null && element.isJsonObject()) loadedRules.add(ruleFromJson(element.getAsJsonObject(), id.toString()));
-                }
-            } catch (Exception ex) {
-                LatentChemlibMod.LOGGER.warn("Ignoring invalid latent reaction rule file {}", id, ex);
-            }
-        });
         resourceManager.listResources("nuclear_decay", id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
             try (var reader = resource.openAsReader()) {
                 JsonElement root = GSON.fromJson(reader, JsonElement.class);
@@ -222,8 +181,8 @@ public class LatentDataManager implements PreparableReloadListener {
             );
         }
         return new Snapshot(
-            Map.copyOf(loadedTraits), profile, loadedMachineProfile, loadedNuclearPhenomenaProfile,
-            List.copyOf(loadedRules), List.copyOf(loadedDecayRules), List.copyOf(loadedFormRules),
+            Map.copyOf(loadedTraits), profile, loadedNuclearPhenomenaProfile,
+            List.copyOf(loadedDecayRules), List.copyOf(loadedFormRules),
             new IsotopeCatalog(List.copyOf(loadedIsotopes.values()))
         );
     }
@@ -316,25 +275,6 @@ public class LatentDataManager implements PreparableReloadListener {
         return elementId + '#' + massNumber;
     }
 
-    private static ReactionRule ruleFromJson(JsonObject json, String fallbackId) {
-        return new ReactionRule(
-            text(json, "id", fallbackId),
-            text(json, "input_chemical", "minecraft:air"),
-            text(json, "output_chemical", ""),
-            text(json, "output_item", ""),
-            number(json, "min_mass", 1.0),
-            number(json, "min_temperature", 293.0),
-            number(json, "min_charge", 0.0),
-            number(json, "min_energy", 0.0),
-            number(json, "output_mass_ratio", 1.0),
-            number(json, "temperature_delta", 0.0),
-            number(json, "charge_delta", 0.0),
-            number(json, "energy_delta", 0.0),
-            (float) number(json, "heat_cost", 0.0),
-            (float) number(json, "heat_emission", 0.0)
-        );
-    }
-
     private static NuclearDecayRule decayRuleFromJson(JsonObject json, String fallbackId) {
         return new NuclearDecayRule(
             text(json, "id", fallbackId),
@@ -355,9 +295,7 @@ public class LatentDataManager implements PreparableReloadListener {
     private record Snapshot(
         Map<String, ChemicalTraits> traits,
         SchedulerProfile schedulerProfile,
-        MachineProfile machineProfile,
         NuclearPhenomenaProfile nuclearPhenomenaProfile,
-        List<ReactionRule> reactionRules,
         List<NuclearDecayRule> nuclearDecayRules,
         List<NuclearFormRule> nuclearFormRules,
         IsotopeCatalog isotopeCatalog

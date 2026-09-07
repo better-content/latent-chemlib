@@ -28,23 +28,9 @@ ordering="NONE"
 side="BOTH"
 
 [[dependencies.${modId}]]
-modId="kotlinforforge"
-mandatory=true
-versionRange="[${kotlinForForgeVersion},)"
-ordering="NONE"
-side="BOTH"
-
-[[dependencies.${modId}]]
 modId="heat_sync"
 mandatory=true
 versionRange="[0.1.0,)"
-ordering="AFTER"
-side="BOTH"
-
-[[dependencies.${modId}]]
-modId="create"
-mandatory=true
-versionRange="[${createReleaseVersion},6.1.0)"
 ordering="AFTER"
 side="BOTH"
 
@@ -61,27 +47,6 @@ mandatory=true
 versionRange="[${adpotherVersion},8.1.50.0)"
 ordering="AFTER"
 side="BOTH"
-
-[[dependencies.${modId}]]
-modId="pneumaticcraft"
-mandatory=true
-versionRange="[${pneumaticCraftVersion},6.1.0)"
-ordering="AFTER"
-side="BOTH"
-
-[[dependencies.${modId}]]
-modId="emi"
-mandatory=false
-versionRange="[${emiVersion},)"
-ordering="AFTER"
-side="CLIENT"
-
-[[dependencies.${modId}]]
-modId="jei"
-mandatory=false
-versionRange="[${jeiVersion},)"
-ordering="AFTER"
-side="CLIENT"
 
 [[dependencies.${modId}]]
 modId="kubejs"

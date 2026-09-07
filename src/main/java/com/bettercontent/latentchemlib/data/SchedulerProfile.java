@@ -1,8 +1,6 @@
 package com.bettercontent.latentchemlib.data;
 
 public record SchedulerProfile(
-    int machineUpdatesPerSecond,
-    int neighborOpsPerSecond,
     int escapeScansPerSecond,
     int nuclearSurfaceScansPerSecond,
     int nuclearStackEvaluationsPerSecond,
@@ -12,6 +10,6 @@ public record SchedulerProfile(
     int nuclearHeatEmissionsPerSecond
 ) {
     public static SchedulerProfile defaults() {
-        return new SchedulerProfile(256, 768, 64, 512, 512, 128, 64, 64, 64);
+        return new SchedulerProfile(64, 512, 512, 128, 64, 64, 64);
     }
 }

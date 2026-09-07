@@ -336,16 +336,4 @@ class ChemicalStateTest {
         assertEquals(75.0, state.withEnergy(75.0).energy());
     }
 
-    @Test
-    void chamberAgitationCannotCollapseAMixtureToItsDominantSpecies() {
-        ChemicalState mixture = new ChemicalState("chemlib:hydrogen", 100.0, 2.0, 700.0, 0.2, 100.0)
-            .merge(new ChemicalState("chemlib:helium", 50.0, 1.0, 700.0, 0.2, 50.0));
-
-        ChemicalState agitated = EmergentMath.chamberAgitation(mixture, com.bettercontent.latentchemlib.data.MachineProfile.defaults());
-
-        assertEquals(2, agitated.components().size());
-        assertEquals(mixture.massOf("chemlib:hydrogen"), agitated.massOf("chemlib:hydrogen"));
-        assertEquals(mixture.massOf("chemlib:helium"), agitated.massOf("chemlib:helium"));
-    }
-
 }

@@ -1,6 +1,5 @@
 package com.bettercontent.latentchemlib.sim;
 
-import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.bettercontent.latentchemlib.data.NuclearDecayRule;
 import com.bettercontent.latentchemlib.data.NuclearPhenomenaProfile;
 
@@ -103,48 +102,6 @@ public final class NuclearPhenomenaMath {
         return Optional.of(new DecayHeatResult(output, consumed, daughter, defect, (float) heat));
     }
 
-    public static Optional<FusionResult> fusion(
-        ChemicalState first,
-        ChemicalState second,
-        ChemicalTraits traits,
-        boolean geometricallyOpposed,
-        NuclearPhenomenaProfile profile
-    ) {
-        if (!geometricallyOpposed || !isFusionStreamCandidate(first, profile) || !isFusionStreamCandidate(second, profile)) return Optional.empty();
-        if (!EmergentMath.fusionIntercept(first, second, traits, 2, 2.0)) {
-            return Optional.empty();
-        }
-        double firstMass = Math.min(first.mass(), profile.fusionBatchMassPerStream());
-        double secondMass = Math.min(second.mass(), profile.fusionBatchMassPerStream());
-        ChemicalState.Split firstSplit = first.split(firstMass);
-        ChemicalState.Split secondSplit = second.split(secondMass);
-        double consumed = firstMass + secondMass;
-        double defect = consumed * profile.fusionMassDefectFraction();
-        double defectEnergy = defect * MASS_ENERGY_UNITS;
-        float emittedHeat = (float) Math.min(profile.fusionHeatEmission(), defectEnergy);
-        ChemicalState helium = new ChemicalState(
-            "chemlib:helium", consumed - defect,
-            firstSplit.extracted().density() + secondSplit.extracted().density(),
-            Math.max(first.temperature(), second.temperature()) + 1_500.0,
-            Math.max(first.charge(), second.charge()),
-            firstSplit.extracted().energy() + secondSplit.extracted().energy() + defectEnergy - emittedHeat
-        );
-        return Optional.of(new FusionResult(firstSplit.remainder(), secondSplit.remainder(), helium, consumed, defect, emittedHeat));
-    }
-
-    private static boolean compatibleHydrogen(ChemicalState state) {
-        if (state == null || !state.isPure()) return false;
-        return state.contains("chemlib:hydrogen") || state.contains("chemlib:deuterium") || state.contains("chemlib:tritium");
-    }
-
-    public static boolean isFusionStreamCandidate(ChemicalState state, NuclearPhenomenaProfile profile) {
-        return compatibleHydrogen(state)
-            && state.mass() >= profile.fusionBatchMassPerStream()
-            && state.temperature() >= profile.fusionMinimumTemperature()
-            && state.density() >= profile.fusionMinimumDensity()
-            && state.energy() >= profile.fusionMinimumEnergy();
-    }
-
     public record FissionResult(
         ChemicalState output,
         double consumedMass,
@@ -156,12 +113,4 @@ public final class NuclearPhenomenaMath {
 
     public record DecayHeatResult(ChemicalState output, double consumedMass, double daughterMass, double massDefect, float heatEmission) {}
 
-    public record FusionResult(
-        ChemicalState firstRemainder,
-        ChemicalState secondRemainder,
-        ChemicalState product,
-        double consumedMass,
-        double massDefect,
-        float heatEmission
-    ) {}
 }
