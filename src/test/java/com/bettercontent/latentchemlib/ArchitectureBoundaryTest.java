@@ -6,15 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ArchitectureBoundaryTest {
     @Test
-    void removedContainmentApiAndMachinesAreNotPackaged() {
-        assertThrows(ClassNotFoundException.class, () -> Class.forName("com.bettercontent.latentchemlib.api.IChemicalStateHandler"));
-        assertThrows(ClassNotFoundException.class, () -> Class.forName("com.bettercontent.latentchemlib.api.LatentCapabilities"));
-        assertThrows(ClassNotFoundException.class, () -> Class.forName("com.bettercontent.latentchemlib.blockentity.LatentMachineBlockEntity"));
+    void removedContainmentApiAndMachinesAreNotPackaged() throws Exception {
+        ClassLoader loader = ArchitectureBoundaryTest.class.getClassLoader();
+        assertFalse(loader.resources("com/bettercontent/latentchemlib/api/IChemicalStateHandler.class").findAny().isPresent());
+        assertFalse(loader.resources("com/bettercontent/latentchemlib/api/LatentCapabilities.class").findAny().isPresent());
+        assertFalse(loader.resources("com/bettercontent/latentchemlib/blockentity/LatentMachineBlockEntity.class").findAny().isPresent());
         assertFalse(Files.exists(Path.of("src/main/resources/assets/latent_chemlib/blockstates/gas_tank.json")));
         assertFalse(Files.exists(Path.of("src/main/resources/assets/latent_chemlib/models/item/sealed_chemical_cell.json")));
     }

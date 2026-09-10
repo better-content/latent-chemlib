@@ -20,6 +20,7 @@ val chemlibVersion = property("chemlib_version") as String
 val chemlibCurseFileId = property("chemlib_curse_file_id") as String
 val adpotherVersion = property("adpother_version") as String
 val forgeEndertechVersion = property("forgeendertech_version") as String
+val pneumaticCraftCurseFileId = property("pneumaticcraft_curse_file_id") as String
 val modId = property("mod_id") as String
 val modName = property("mod_name") as String
 val modVersion = property("mod_version") as String
@@ -125,6 +126,7 @@ dependencies {
     runtimeOnly(deobf("io.github.llamalad7:mixinextras-forge:0.3.6"))
     runtimeOnly(deobf("dev.engine-room.flywheel:flywheel-forge-$minecraftVersion:$flywheelVersion"))
     runtimeOnly(deobf("com.tterrag.registrate:Registrate:$registrateVersion"))
+    runtimeOnly(deobf("curse.maven:pneumaticcraft-repressurized-281849:$pneumaticCraftCurseFileId"))
 
     annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
 
@@ -202,6 +204,12 @@ tasks.named<JavaCompile>("compileJava") {
     // Tracking it prevents an incremental release build from reusing classes
     // after the refmap has disappeared and silently producing an unusable JAR.
     outputs.file(layout.buildDirectory.file("tmp/compileJava/compileJava-refmap.json"))
+
+    // Gradle can execute an invalidated incremental compile without invoking
+    // annotation processors when no source changed, leaving the tracked refmap
+    // absent. A full Java compile is small here and guarantees the release
+    // sidecar is recreated whenever this task has to run.
+    options.isIncremental = false
 }
 
 val verifyRuntimeJar by tasks.registering {
