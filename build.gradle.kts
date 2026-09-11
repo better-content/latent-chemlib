@@ -5,8 +5,8 @@ plugins {
     eclipse
     `maven-publish`
     jacoco
-    id("net.minecraftforge.gradle") version "[6.0,6.2)"
-    id("org.spongepowered.mixin") version "0.7.+"
+    id("net.minecraftforge.gradle") version "6.0.54"
+    id("org.spongepowered.mixin") version "0.7.38"
 }
 
 val minecraftVersion = property("minecraft_version") as String
@@ -28,8 +28,6 @@ val modAuthors = property("mod_authors") as String
 val modDescription = property("mod_description") as String
 val modLicense = property("mod_license") as String
 val modIssueTrackerUrl = property("mod_issue_tracker_url") as String
-val packArtifactCache = providers.environmentVariable("BC_PACKAGE_ARTIFACT_CACHE")
-    .orElse("${System.getProperty("user.home")}/.cache/bc/packwiz-downloads")
 
 group = property("mod_group") as String
 version = modVersion
@@ -89,6 +87,18 @@ sourceSets.main {
     resources.srcDir("src/generated/resources")
 }
 
+// CI and fresh-release builds provide verified runtime JARs explicitly.
+// Ordinary local builds retain the canonical sibling build/libs convention.
+fun betterContentJar(repository: String, artifact: String): java.io.File {
+    val directory = providers.environmentVariable("BC_CUSTOM_MOD_JAR_DIR").orNull
+    require(directory == null || directory.isNotBlank()) { "BC_CUSTOM_MOD_JAR_DIR must not be blank" }
+    val jar = if (directory == null) file("../$repository/build/libs/$artifact") else file(directory).resolve(artifact)
+    require(jar.isFile) {
+        "Missing Better Content provider $artifact at $jar; prepare BC_CUSTOM_MOD_JAR_DIR or build $repository first"
+    }
+    return jar
+}
+
 repositories {
     mavenCentral()
     maven("https://maven.minecraftforge.net")
@@ -104,8 +114,7 @@ repositories {
     maven("https://maven.blamejared.com")
     flatDir {
         dirs(
-            "${packArtifactCache.get()}/mods",
-            "../heat-sync/build/libs"
+            betterContentJar("heat-sync", "heat-sync-0.1.0.jar").parentFile
         )
     }
 }
@@ -131,10 +140,10 @@ dependencies {
     annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
 
     implementation(deobf("curse.maven:chemlib-340666:$chemlibCurseFileId"))
-    compileOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2294"))
-    runtimeOnly(deobf("local:AdPother:1.20.1-$adpotherVersion-build.2294"))
-    compileOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2294"))
-    runtimeOnly(deobf("local:ForgeEndertech:1.20.1-$forgeEndertechVersion-build.2294"))
+    compileOnly(deobf("curse.maven:pollution-of-the-realms-269973:8554528"))
+    runtimeOnly(deobf("curse.maven:pollution-of-the-realms-269973:8554528"))
+    compileOnly(deobf("curse.maven:forgeendertech-244844:8554308"))
+    runtimeOnly(deobf("curse.maven:forgeendertech-244844:8554308"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
