@@ -164,15 +164,6 @@ mixin {
     config("latent_chemlib.mixins.json")
 }
 
-val syncGameTestStructures by tasks.registering(Copy::class) {
-    from(layout.projectDirectory.dir("gameteststructures"))
-    into(layout.projectDirectory.dir("run/gameteststructures"))
-}
-
-tasks.matching { it.name == "prepareRunGameTestServer" }.configureEach {
-    dependsOn(syncGameTestStructures)
-}
-
 tasks.named<Jar>("jar") {
     dependsOn(tasks.named("compileJava"))
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -315,3 +306,5 @@ tasks.register("verifyFull") {
     dependsOn(tasks.named("headlessGameTest"))
     dependsOn(verifyRuntimeJar)
 }
+
+apply(from = "gradle/gametest-evidence.gradle")

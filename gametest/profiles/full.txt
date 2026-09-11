@@ -1,0 +1,3 @@
+player_placement_tracks_nuclear_state
+collection_preserves_isotopes_and_consumes_sidecar
+chunk_reconciliation_retains_valid_and_removes_stale
