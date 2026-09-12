@@ -1,6 +1,7 @@
 package com.bettercontent.latentchemlib.sim;
 
 import com.bettercontent.latentchemlib.LatentChemlibMod;
+import com.bettercontent.latentchemlib.api.AirtightInventory;
 import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.bettercontent.latentchemlib.data.LatentDataManager;
 import com.bettercontent.latentchemlib.integration.adpother.AdpotherGasBoundary;
@@ -183,6 +184,7 @@ public class GasEscapeHandler {
     }
 
     private void scanHolder(Object holder, BlockPos origin, ServerLevel level) {
+        if (isAirtight(holder)) return;
         if (holder instanceof Container container) {
             scanContainer(container, origin, level);
             return;
@@ -200,17 +202,12 @@ public class GasEscapeHandler {
 
     public static void markActive(BlockEntity blockEntity) {
         if (blockEntity.getLevel() instanceof ServerLevel level) {
-            if (!INSTANCE.hasEscapableHolder(blockEntity)) return;
-            if (SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) {
-                INSTANCE.scanHolder(blockEntity, blockEntity.getBlockPos(), level);
-            }
-            if (INSTANCE.hasEscapableHolder(blockEntity)) {
-                INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
-            }
+            INSTANCE.blockInventories(level).add(blockEntity.getBlockPos().immutable());
         }
     }
 
     private boolean hasEscapableHolder(Object holder) {
+        if (isAirtight(holder)) return false;
         if (holder instanceof Container container) {
             for (int slot = 0; slot < container.getContainerSize(); slot++) {
                 if (escapePayload(container.getItem(slot)).isPresent()) return true;
@@ -228,6 +225,10 @@ public class GasEscapeHandler {
                 .orElse(false);
         }
         return false;
+    }
+
+    static boolean isAirtight(Object holder) {
+        return holder instanceof AirtightInventory inventory && inventory.isAirtight();
     }
 
     private boolean hasEscapableStack(net.minecraftforge.items.IItemHandler handler) {

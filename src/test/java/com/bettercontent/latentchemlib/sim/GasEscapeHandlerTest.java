@@ -1,5 +1,6 @@
 package com.bettercontent.latentchemlib.sim;
 
+import com.bettercontent.latentchemlib.api.AirtightInventory;
 import com.bettercontent.latentchemlib.data.ChemicalTraits;
 import com.smashingmods.chemlib.api.Chemical;
 import com.smashingmods.chemlib.api.MatterState;
@@ -15,6 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GasEscapeHandlerTest {
+    @Test
+    void airtightContractSuppressesEscapeUntilUnsealed() {
+        MutableAirtightInventory inventory = new MutableAirtightInventory(true);
+        assertTrue(GasEscapeHandler.isAirtight(inventory));
+        inventory.airtight = false;
+        assertFalse(GasEscapeHandler.isAirtight(inventory));
+        assertFalse(GasEscapeHandler.isAirtight(new Object()));
+    }
+
     @Test
     void onlyGasMatterStateCanEscapeAsGas() {
         assertTrue(GasEscapeHandler.canEscapeAsGas(new FakeChemical(MatterState.GAS)));
@@ -98,6 +108,19 @@ class GasEscapeHandlerTest {
         @Override
         public int getColor() {
             return 0xFFFFFF;
+        }
+    }
+
+    private static final class MutableAirtightInventory implements AirtightInventory {
+        private boolean airtight;
+
+        private MutableAirtightInventory(boolean airtight) {
+            this.airtight = airtight;
+        }
+
+        @Override
+        public boolean isAirtight() {
+            return airtight;
         }
     }
 }

@@ -18,6 +18,9 @@ ChemLib registry data.
   density, movement, wind, spreading, impacts, protection, detection,
   explosions, filtering, chimney routing, and cleanup.
 - Gas item escape handling for item entities and player inventories.
+- A narrow `AirtightInventory` API for owning machines to suppress gas escape
+  while their sealed state is active. Block-entity mutations are queued for the
+  next budgeted escape scan, so newly inserted gases do not wait for chunk reload.
 - Heavy element neutron flux simulation for ChemLib element stacks.
 - Data-driven fixed radioactive-family profiles selected by exact item/block ID
   or item/block tag, with independent radiation and radiogenic heat strengths.
@@ -26,7 +29,8 @@ ChemLib registry data.
 - A read-only `LatentEmissionProfiles` API for stack and placed-form consumers;
   fixed Realistic Ores profiles do not create or require isotope NBT.
 - No blocks, items, fluid stores, chemical capabilities, or generic reaction
-  machines. The owning mods remain authoritative for containment and processing.
+  machines. Owning mods remain authoritative for installing and persisting
+  containment and for processing.
 - File-based datapack reload support for:
   - `data/latent_chemlib/chemical_traits/*.json`
   - `data/latent_chemlib/scheduler_profiles/default.json`
