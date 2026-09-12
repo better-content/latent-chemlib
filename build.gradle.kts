@@ -44,6 +44,9 @@ java {
     withSourcesJar()
 }
 
+// Test-only form bindings never enter the deployable mod JAR.
+val nativeEvidence = sourceSets.create("nativeEvidence")
+
 minecraft {
     mappings("official", minecraftVersion)
     copyIdeResources = true
@@ -70,7 +73,9 @@ minecraft {
             arg("--nogui")
         }
 
-        create("gameTestServer")
+        create("gameTestServer") {
+            mods { getByName(modId).source(nativeEvidence) }
+        }
 
         create("data") {
             args(

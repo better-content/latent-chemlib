@@ -35,6 +35,9 @@ public final class PlacedNuclearLifecycle {
             RadioactiveFormResolver.INSTANCE.resolve(event.getPlacedBlock());
         if (fixed.isPresent()) {
             trackDisturbed(level, event.getPos(), fixed.get());
+            if (fixed.get().form().naturalWorldgenInert()) {
+                com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, event.getPos(), com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.RADIOACTIVE_ACTIVATED, event.getEntity(), 1);
+            }
             return;
         }
         Optional<PlacedNuclearResolver.ResolvedPlacement> resolved =

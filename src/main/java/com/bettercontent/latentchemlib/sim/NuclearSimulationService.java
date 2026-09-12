@@ -448,6 +448,7 @@ public class NuclearSimulationService {
     private static float distributeHeat(ServerLevel level, BlockPos pos, float heatEmission) {
         if (pos == null) return heatEmission;
         final double unaccepted = com.bettercontent.heatsync.api.ThermalApi.distributeHeat(level, pos, heatEmission);
+        com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, pos, com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.HEAT_ACCEPTED, null, heatEmission - unaccepted);
         // Heat Sync is the only environmental thermal authority. Unaccepted heat
         // remains in the simulated material so an event cannot silently destroy energy.
         return (float) Math.max(0.0, unaccepted);

@@ -60,6 +60,7 @@ public class GasEscapeHandler {
         if (entity instanceof ItemEntity itemEntity) {
             replaceEscapedStack(itemEntity.getItem(), level, itemEntity.blockPosition()).ifPresent(replacement -> {
                 itemEntity.setItem(replacement);
+                com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, itemEntity.blockPosition(), com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.GAS_RELEASED, itemEntity, 1);
                 if (replacement.isEmpty()) itemEntity.discard();
             });
             if (itemEntity.isAlive() && escapePayload(itemEntity.getItem()).isPresent()) entityInventories(level).add(itemEntity.getUUID());
@@ -134,6 +135,7 @@ public class GasEscapeHandler {
                 replaceEscapedStack(itemEntity.getItem(), level, itemEntity.blockPosition())
                     .ifPresent(replacement -> {
                         itemEntity.setItem(replacement);
+                        com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, itemEntity.blockPosition(), com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.GAS_RELEASED, itemEntity, 1);
                         if (replacement.isEmpty()) itemEntity.discard();
                     });
                 return itemEntity.isAlive() && escapePayload(itemEntity.getItem()).isPresent()
@@ -179,7 +181,10 @@ public class GasEscapeHandler {
         ItemStack held = player.getItemInHand(hand);
         if (!(held.getItem() instanceof BucketItem bucket) || !GasFluidCodec.isGasFluid(bucket.getFluid())) return false;
         Optional<ItemStack> replacement = replaceEscapedStack(held, level, origin);
-        replacement.ifPresent(stack -> player.setItemInHand(hand, stack));
+        replacement.ifPresent(stack -> {
+            player.setItemInHand(hand, stack);
+            com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, origin, com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.GAS_RELEASED, player, 1);
+        });
         return replacement.isPresent();
     }
 
@@ -191,11 +196,11 @@ public class GasEscapeHandler {
         }
         if (holder instanceof BlockEntity blockEntity) {
             blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(handler -> {
-                if (handler instanceof IItemHandlerModifiable modifiable) scanItemHandler(modifiable, origin, level);
+                if (handler instanceof IItemHandlerModifiable modifiable) scanItemHandler(modifiable, origin, level, holder);
             });
         } else if (holder instanceof Entity entity) {
             entity.getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(handler -> {
-                if (handler instanceof IItemHandlerModifiable modifiable) scanItemHandler(modifiable, origin, level);
+                if (handler instanceof IItemHandlerModifiable modifiable) scanItemHandler(modifiable, origin, level, holder);
             });
         }
     }
@@ -244,16 +249,20 @@ public class GasEscapeHandler {
             Optional<ItemStack> replacement = replaceEscapedStack(container.getItem(slot), level, origin);
             if (replacement.isPresent()) {
                 container.setItem(slot, replacement.get());
+                com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, origin, com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.GAS_RELEASED, container, 1);
                 changed = true;
             }
         }
         if (changed) container.setChanged();
     }
 
-    private void scanItemHandler(IItemHandlerModifiable handler, BlockPos origin, ServerLevel level) {
+    private void scanItemHandler(IItemHandlerModifiable handler, BlockPos origin, ServerLevel level, Object holder) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             Optional<ItemStack> replacement = replaceEscapedStack(handler.getStackInSlot(slot), level, origin);
-            if (replacement.isPresent()) handler.setStackInSlot(slot, replacement.get());
+            if (replacement.isPresent()) {
+                handler.setStackInSlot(slot, replacement.get());
+                com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.publish(level, origin, com.bettercontent.latentchemlib.api.event.ChemicalOutcomeEvent.Kind.GAS_RELEASED, holder, 1);
+            }
         }
     }
 
