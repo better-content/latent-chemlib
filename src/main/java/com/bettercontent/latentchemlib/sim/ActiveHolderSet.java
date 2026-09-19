@@ -19,7 +19,11 @@ final class ActiveHolderSet<T> {
     int visit(int limit, Function<T, Decision> visitor) {
         int visited = 0;
         int bounded = Math.max(0, limit);
-        while (visited < bounded && !entries.isEmpty()) {
+        // A visit is one scheduling round. Entries added by a holder's own
+        // callback wait for the next round, so mutation cannot make one KEEP
+        // holder consume the entire allowance or visit itself twice.
+        int roundEntries = entries.size();
+        while (visited < bounded && visited < roundEntries && !entries.isEmpty()) {
             T value = entries.iterator().next();
             entries.remove(value);
             Decision decision = visitor.apply(value);

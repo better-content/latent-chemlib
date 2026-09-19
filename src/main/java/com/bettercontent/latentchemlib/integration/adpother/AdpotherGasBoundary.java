@@ -14,7 +14,6 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,16 +26,28 @@ import java.util.Optional;
 public final class AdpotherGasBoundary {
     public static final AdpotherGasBoundary INSTANCE = new AdpotherGasBoundary();
     public static final double MASS_PER_ADPOTHER_UNIT = 16.0;
+    private static final double UNIT_EPSILON = 1.0e-9;
 
     private AdpotherGasBoundary() {}
 
-    /** Atomically releases every whole unit represented by the supplied contained state. */
+    /**
+     * Atomically releases a state which AdPother can represent exactly.
+     *
+     * <p>The source owner keeps the state until this method succeeds.  The
+     * boundary deliberately refuses a fractional unit rather than accepting a
+     * rounded prefix: neither an item nor a fluid block has a place to retain
+     * that remainder after its source is consumed.</p>
+     */
     public ReleaseResult release(ServerLevel level, BlockPos origin, ChemicalState state) {
         if (state == null || state.mass() <= 0.0) return ReleaseResult.rejected(state);
 
         List<PollutantPayload> payloads = new ArrayList<>();
         for (var component : state.components().entrySet()) {
-            int units = (int) Math.floor(component.getValue() / MASS_PER_ADPOTHER_UNIT);
+            int units = exactUnits(component.getValue());
+            // A source may only be debited after every component has an exact
+            // native representation.  In particular 375 mB is 24 mass: it is
+            // retained, rather than quietly releasing 250 mB and losing 125.
+            if (units < 0) return ReleaseResult.rejected(state);
             if (units <= 0) continue;
             Pollutant<?> pollutant = pollutantFor(component.getKey()).orElse(null);
             if (pollutant == null) return ReleaseResult.rejected(state);
@@ -69,19 +80,16 @@ public final class AdpotherGasBoundary {
             if (remaining > 0) return ReleaseResult.rejected(state);
         }
 
-        Map<BlockPos, BlockState> originals = new LinkedHashMap<>();
         BlockPos firstTarget = null;
         int acceptedUnits = 0;
         for (Placement placement : placements) {
-            originals.putIfAbsent(placement.pos(), level.getBlockState(placement.pos()));
-            int inserted = placement.pollutant().pump(level, placement.pos(), placement.units());
-            if (inserted != placement.units()) {
-                originals.forEach((pos, original) -> level.setBlock(pos, original, 3));
-                return ReleaseResult.rejected(state);
-            }
             if (firstTarget == null) firstTarget = placement.pos();
-            acceptedUnits += inserted;
+            acceptedUnits += placement.units();
         }
+        // Commit the exact states calculated above.  Do not call pump and then
+        // report rejection or restore source blocks: a post-insert rejection is
+        // ambiguous to callers and can duplicate matter on their rollback path.
+        virtualStates.forEach((pos, next) -> level.setBlock(pos, next, 3));
         return new ReleaseResult(
             acceptedUnits * MASS_PER_ADPOTHER_UNIT,
             0.0,
@@ -130,6 +138,20 @@ public final class AdpotherGasBoundary {
             .thenComparingInt(BlockPos::getY)
             .thenComparingInt(BlockPos::getZ));
         return List.copyOf(offsets);
+    }
+
+    /** True only when every component has a whole native AdPother unit. */
+    static boolean isExactlyRepresentable(ChemicalState state) {
+        return state != null && state.mass() > 0.0
+            && state.components().values().stream().allMatch(mass -> exactUnits(mass) >= 0);
+    }
+
+    private static int exactUnits(double mass) {
+        if (!Double.isFinite(mass) || mass <= 0.0) return -1;
+        double units = mass / MASS_PER_ADPOTHER_UNIT;
+        long rounded = Math.round(units);
+        if (rounded <= 0L || rounded > Integer.MAX_VALUE || Math.abs(units - rounded) > UNIT_EPSILON) return -1;
+        return (int) rounded;
     }
 
     private record PollutantPayload(String chemicalId, Pollutant<?> pollutant, int units) {}

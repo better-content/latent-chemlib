@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class ActiveHolderSetTest {
     @Test
@@ -44,5 +45,40 @@ class ActiveHolderSetTest {
         assertEquals(1, index.size());
         index.remove(2);
         assertEquals(0, index.size());
+    }
+
+    @Test
+    void blockedKeepMovesToTailInsteadOfStarvingLaterHolders() {
+        ActiveHolderSet<Integer> index = new ActiveHolderSet<>();
+        index.add(1);
+        index.add(2);
+        index.add(3);
+        List<Integer> visited = new ArrayList<>();
+
+        for (int round = 0; round < 3; round++) {
+            assertEquals(1, index.visit(1, value -> {
+                visited.add(value);
+                return ActiveHolderSet.Decision.STOP;
+            }));
+        }
+
+        assertEquals(List.of(1, 2, 3), visited);
+    }
+
+    @Test
+    void mutationDefersNewWorkUntilTheNextRound() {
+        ActiveHolderSet<Integer> index = new ActiveHolderSet<>();
+        index.add(1);
+        index.add(2);
+        List<Integer> firstRound = new ArrayList<>();
+
+        assertEquals(2, index.visit(10, value -> {
+            firstRound.add(value);
+            index.add(3);
+            return ActiveHolderSet.Decision.KEEP;
+        }));
+        assertEquals(List.of(1, 2), firstRound);
+        assertFalse(firstRound.contains(3));
+        assertEquals(3, index.size());
     }
 }

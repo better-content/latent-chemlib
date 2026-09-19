@@ -52,6 +52,7 @@ public class GasEscapeHandler {
 
     private final Map<ServerLevel, ActiveHolderSet<BlockPos>> activeBlockInventories = new WeakHashMap<>();
     private final Map<ServerLevel, ActiveHolderSet<UUID>> activeEntityInventories = new WeakHashMap<>();
+    private final Map<ServerLevel, Boolean> blocksFirst = new WeakHashMap<>();
 
     @SubscribeEvent
     public void onEntityJoin(EntityJoinLevelEvent event) {
@@ -102,6 +103,7 @@ public class GasEscapeHandler {
         if (event.getLevel() instanceof ServerLevel level) {
             activeBlockInventories.remove(level);
             activeEntityInventories.remove(level);
+            blocksFirst.remove(level);
         }
     }
 
@@ -120,17 +122,45 @@ public class GasEscapeHandler {
             || level.getGameTime() % 20L != 0L) {
             return;
         }
-        blockInventories(level).visit(Integer.MAX_VALUE, pos -> {
+        // Alternate holder classes within each allowance. A blocked KEEP block
+        // advances to its own tail and cannot starve entity inventories.
+        boolean[] canContinue = { true };
+        boolean blocksBeforeEntities = blocksFirst.getOrDefault(level, true);
+        blocksFirst.put(level, !blocksBeforeEntities);
+        while (canContinue[0]) {
+            int visited = 0;
+            if (blocksBeforeEntities) {
+                visited += visitBlockInventory(level, canContinue);
+                if (canContinue[0]) visited += visitEntityInventory(level, canContinue);
+            } else {
+                visited += visitEntityInventory(level, canContinue);
+                if (canContinue[0]) visited += visitBlockInventory(level, canContinue);
+            }
+            if (visited == 0) break;
+        }
+    }
+
+    private int visitBlockInventory(ServerLevel level, boolean[] canContinue) {
+        return blockInventories(level).visit(1, pos -> {
             BlockEntity blockEntity = level.isLoaded(pos) ? level.getBlockEntity(pos) : null;
             if (blockEntity == null) return ActiveHolderSet.Decision.REMOVE;
-            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
             scanHolder(blockEntity, pos, level);
             return hasEscapableHolder(blockEntity) ? ActiveHolderSet.Decision.KEEP : ActiveHolderSet.Decision.REMOVE;
         });
-        entityInventories(level).visit(Integer.MAX_VALUE, uuid -> {
+    }
+
+    private int visitEntityInventory(ServerLevel level, boolean[] canContinue) {
+        return entityInventories(level).visit(1, uuid -> {
             Entity entity = level.getEntity(uuid);
             if (entity == null || !entity.isAlive()) return ActiveHolderSet.Decision.REMOVE;
-            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) return ActiveHolderSet.Decision.STOP;
+            if (!SimulationScheduler.INSTANCE.trySpend(level, SimulationBudget.ESCAPE_SCANS, 1)) {
+                canContinue[0] = false;
+                return ActiveHolderSet.Decision.STOP;
+            }
             if (entity instanceof ItemEntity itemEntity) {
                 replaceEscapedStack(itemEntity.getItem(), level, itemEntity.blockPosition())
                     .ifPresent(replacement -> {

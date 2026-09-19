@@ -14,7 +14,8 @@ ChemLib registry data.
 - A one-way atmospheric boundary that turns escaped ChemLib gases into native
   AdPother pollutant blocks.
 - A conserved bridge ratio of 16 Latent mass per AdPother unit. Release is
-  preflighted atomically, while AdPother remains the sole authority for ambient
+  preflighted atomically and rejects an unrepresentable fractional source,
+  while AdPother remains the sole authority for ambient
   density, movement, wind, spreading, impacts, protection, detection,
   explosions, filtering, chimney routing, and cleanup.
 - Gas item escape handling for item entities and player inventories.
@@ -34,7 +35,8 @@ ChemLib registry data.
 - File-based datapack reload support for:
   - `data/latent_chemlib/chemical_traits/*.json`
   - `data/latent_chemlib/scheduler_profiles/default.json`
-- Server tick budgets for gas-escape and nuclear workloads.
+- Server tick budgets for gas-escape and nuclear workloads. Gas scans rotate
+  block and entity holders within the existing allowance.
 - Unit tests for numeric curves and emergent simulation math.
 
 ## Tech Stack
