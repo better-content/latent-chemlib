@@ -66,6 +66,26 @@ class ActiveHolderSetTest {
     }
 
     @Test
+    void blockedKeepAlsoRotatesWhenAllowanceIsOne() {
+        ActiveHolderSet<Integer> index = new ActiveHolderSet<>();
+        index.add(1); index.add(2); index.add(3);
+        List<Integer> visited = new ArrayList<>();
+        for (int round = 0; round < 6; round++) {
+            assertEquals(1, index.visit(1, value -> {
+                visited.add(value);
+                return ActiveHolderSet.Decision.KEEP;
+            }));
+        }
+        assertEquals(List.of(1, 2, 3, 1, 2, 3), visited);
+    }
+
+    @Test
+    void exhaustedSetDoesNoWork() {
+        ActiveHolderSet<Integer> index = new ActiveHolderSet<>();
+        assertEquals(0, index.visit(100, value -> { throw new AssertionError("visited empty set"); }));
+    }
+
+    @Test
     void mutationDefersNewWorkUntilTheNextRound() {
         ActiveHolderSet<Integer> index = new ActiveHolderSet<>();
         index.add(1);
