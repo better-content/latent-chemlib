@@ -33,4 +33,21 @@ class AdpotherGasBoundaryTest {
         assertFalse(AdpotherGasBoundary.isExactlyRepresentable(partial));
         assertTrue(AdpotherGasBoundary.isExactlyRepresentable(exact));
     }
+
+    @Test
+    void rejectedPayloadRetainsEntireSourceForRetry() {
+        ChemicalState partial = new ChemicalState("chemlib:carbon_dioxide", 24.0, 1.0, 293.0, 0.0, 0.0);
+        AdpotherGasBoundary.ReleaseResult result = AdpotherGasBoundary.ReleaseResult.rejected(partial);
+        assertEquals(0.0, result.acceptedMass());
+        assertEquals(partial.mass(), result.rejectedMass());
+        assertFalse(result.acceptedAll());
+    }
+
+    @Test
+    void acceptedMassNeverClaimsMoreThanTheRepresentableSource() {
+        ChemicalState exact = new ChemicalState("chemlib:carbon_dioxide", 32.0, 1.0, 293.0, 0.0, 0.0);
+        AdpotherGasBoundary.ReleaseResult result = new AdpotherGasBoundary.ReleaseResult(32.0, 0.0, BlockPos.ZERO);
+        assertTrue(result.acceptedAll());
+        assertEquals(exact.mass(), result.acceptedMass() + result.rejectedMass());
+    }
 }
